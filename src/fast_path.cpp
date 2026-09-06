@@ -4,6 +4,10 @@
 // =============================================================================
 
 #include "fast_path.h"
+
+#include "signature_set.h"
+#include "tls_fingerprint.h"
+
 #include <algorithm>
 #include <iostream>
 #include <sstream>
@@ -185,21 +189,32 @@ bool FastPathProcessor::tryExtractSNI(const PacketJob& job, Connection* conn) {
             len = buf.size();
         }
     }
-    auto sni = SNIExtractor::extract(data, len);
-    if (sni) {
+    if (job.tuple.dst_port == 443 || len >= 50) {
+        TlsClientHello ch;
+        if (parseClientHello(data, len, ch)) {
+            sni_extractions_++;
+            conn->ja3 = ja3(ch);
+            conn->ja4 = ja4(ch);
+
+            std::string label = classifyLabel(ch.sni, ja3String(ch), conn->ja3, conn->ja4);
+            AppType app = labelToAppType(label);
+            if (app == AppType::UNKNOWN) app = ch.has_sni ? AppType::HTTPS : AppType::UNKNOWN;
+            conn_tracker_.classifyConnection(conn, app, ch.sni);
+
+            if (app != AppType::UNKNOWN && app != AppType::HTTPS) classification_hits_++;
+            return app != AppType::UNKNOWN;  // keep trying if we learned nothing yet
+        }
+    }
+
+    // Fallback: some non-443 payloads still carry a plain ClientHello.
+    if (auto sni = SNIExtractor::extract(data, len)) {
         sni_extractions_++;
-        
-        // Map SNI to app type
         AppType app = sniToAppType(*sni);
         conn_tracker_.classifyConnection(conn, app, *sni);
-        
-        if (app != AppType::UNKNOWN && app != AppType::HTTPS) {
-            classification_hits_++;
-        }
-        
+        if (app != AppType::UNKNOWN && app != AppType::HTTPS) classification_hits_++;
         return true;
     }
-    
+
     return false;
 }
 

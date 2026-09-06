@@ -16,7 +16,7 @@ namespace PacketAnalyzer {
 namespace {
 bool wantsValue(const std::string& a) {
     return a == "-i" || a == "--iface" || a == "-o" || a == "--output" || a == "-w" ||
-           a == "-c" || a == "--count" || a == "--snaplen";
+           a == "-c" || a == "--count" || a == "--snaplen" || a == "--signatures";
 }
 }  // namespace
 
@@ -59,6 +59,9 @@ bool parseRunOptions(int argc, char** argv, RunOptions& out, std::string& err) {
                 return false;
             }
             ++i;
+        } else if (a == "--signatures") {
+            out.signatures = val;
+            ++i;
         } else if (a == "--promisc") {
             out.promiscuous = true;
         } else if (a == "--no-promisc") {
@@ -86,6 +89,7 @@ std::string captureHelp() {
         "  -c, --count <n>       stop after n frames\n"
         "      --snaplen <n>     bytes captured per frame, live (default: 262144)\n"
         "      --promisc / --no-promisc   promiscuous mode, live (default: on)\n"
+        "      --signatures <f>  load app signatures from <f> (replaces the built-ins)\n"
         "  -h, --help\n";
 }
 

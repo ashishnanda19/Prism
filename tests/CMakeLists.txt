@@ -22,6 +22,9 @@ add_executable(prism_tests
     test_pcap_reader.cpp
     test_tcp_reassembler.cpp
     test_capture_cli.cpp
+    test_hashes.cpp
+    test_signature_set.cpp
+    test_tls_fingerprint.cpp
 )
 target_link_libraries(prism_tests PRIVATE prism_core doctest prism_sanitize)
 target_compile_definitions(prism_tests PRIVATE

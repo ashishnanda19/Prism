@@ -148,7 +148,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [packet_parser, sni_extractor, quic_sni, http_host, dns, pcap_reader]
+        target: [packet_parser, sni_extractor, quic_sni, http_host, dns, pcap_reader, tls_fingerprint]
     steps:
       - uses: actions/checkout@v5
 

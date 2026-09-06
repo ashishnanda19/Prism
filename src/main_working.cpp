@@ -14,6 +14,7 @@
 
 #include "pcap_reader.h"
 #include "packet_parser.h"
+#include "signature_set.h"
 #include "sni_extractor.h"
 #include "types.h"
 
@@ -125,6 +126,12 @@ int main(int argc, char* argv[]) {
             rules.blockApp(argv[++i]);
         } else if (arg == "--block-domain" && i + 1 < argc) {
             rules.blockDomain(argv[++i]);
+        } else if (arg == "--signatures" && i + 1 < argc) {
+            std::string serr;
+            if (!loadSignatureFile(argv[++i], serr)) {
+                std::cerr << "prism-lite: " << serr << "\n";
+                return 1;
+            }
         }
     }
     

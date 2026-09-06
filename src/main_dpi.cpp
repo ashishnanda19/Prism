@@ -11,6 +11,7 @@
 
 #include "capture_cli.h"
 #include "dpi_engine.h"
+#include "signature_set.h"
 
 using namespace DPI;
 using PacketAnalyzer::RunOptions;
@@ -99,6 +100,11 @@ int main(int argc, char* argv[]) {
         else if (a == "--fps") config.fps_per_lb = std::stoi(val());
         else if (a == "--verbose") config.verbose = true;
         else { std::cerr << "prism-classic: unknown option '" << a << "'\n"; return 2; }
+    }
+
+    if (!opt.signatures.empty() && !DPI::loadSignatureFile(opt.signatures, err)) {
+        std::cerr << "prism-classic: " << err << "\n";
+        return 1;
     }
 
     auto source = PacketAnalyzer::openSource(opt, err);

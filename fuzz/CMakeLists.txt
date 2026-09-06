@@ -13,7 +13,7 @@
 #
 # PRISM_HAVE_LIBFUZZER is detected in the top-level CMakeLists.
 
-set(PRISM_FUZZERS packet_parser sni_extractor quic_sni http_host dns pcap_reader)
+set(PRISM_FUZZERS packet_parser sni_extractor quic_sni http_host dns pcap_reader tls_fingerprint)
 
 foreach(name IN LISTS PRISM_FUZZERS)
     set(tgt fuzz_${name})

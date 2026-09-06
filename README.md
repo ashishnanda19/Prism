@@ -959,6 +959,26 @@ sudo ./build/bin/prism --iface eth0 -o output.pcap
 `prism` and `prism-classic` support `--iface`; `prism-lite` is file-only.
 Run `./build/bin/prism --help` for the full flag list.
 
+### Application signatures & TLS fingerprints
+
+Classification is data-driven. The built-in ruleset maps SNI/host patterns to
+apps; `--signatures <file>` replaces it with your own. Rules are one per line:
+
+```
+suffix    youtu.be         YouTube        # host == pattern or *.pattern
+contains  googlevideo       YouTube        # substring of the host
+exact     t.co             Twitter/X
+ja3hash   a0e9f5d64349...   Tor            # exact JA3 md5
+ja4       t13d1516h2_..._... Chrome        # exact JA4
+ja4prefix t13d              ModernTLS13    # JA4_a (client family) prefix
+```
+
+Every TLS flow's **JA3** and **JA4** fingerprint is computed from the
+ClientHello (reassembled first-flight, so split hellos are covered). When the
+SNI is missing (Encrypted ClientHello) or generic, `ja3`/`ja4` rules attribute
+the flow. `prism`'s report lists the observed fingerprints and signature
+labels.
+
 ### Creating Test Data
 
 ```bash
@@ -1047,7 +1067,7 @@ Prism is being taken from "portfolio project" to production-grade in tracked ste
 | 2 | GitHub Actions CI — gcc/clang/macOS build matrix, ASan+UBSan / TSan runs, clang-tidy, libFuzzer harnesses for every parser | ✅ done |
 | 3 | TCP first-flight reassembly — classify TLS ClientHellos that span multiple segments (`TcpReassembler`, wired into `prism` + `prism-classic`) | ✅ done |
 | 4 | Live capture — `PacketSource` abstraction; `AF_PACKET` (Linux) / `BPF` (macOS) live source with `--iface`, `--count`, `--promisc`, Ctrl-C stop | ✅ done |
-| 5 | Signature DSL + JA3/JA4(+) TLS fingerprinting; real QUIC v1 Initial decode | planned |
+| 5 | Signature DSL (`--signatures`, hot-swappable rules) + JA3 / JA4 TLS fingerprinting | ✅ done (real QUIC v1 Initial decode still pending) |
 | 6 | Structured logging, Prometheus `/metrics` + Grafana dashboard, flow export (IPFIX / JSON) | planned |
 | 7 | One flagship feature — JA4+ client DB, XDP/eBPF prefilter, HTTP/3 decode, or per-flow "explain the verdict" | planned |
 

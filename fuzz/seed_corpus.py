@@ -61,6 +61,7 @@ def seed_synthetic():
     hs = b"\x01" + len(body).to_bytes(3, "big") + body
     rec = b"\x16\x03\x01" + struct.pack(">H", len(hs)) + hs
     write("sni_extractor", "clienthello_example_com", rec)
+    write("tls_fingerprint", "clienthello_example_com", rec)
     write("quic_sni", "clienthello_blob", b"\xc0\x00\x00\x00\x01" + b"\x00" * 8 + rec)
 
     # --- HTTP request with Host header ---

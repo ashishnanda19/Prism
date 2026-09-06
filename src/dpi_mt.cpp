@@ -27,8 +27,10 @@
 #include "capture_cli.h"
 #include "pcap_reader.h"
 #include "packet_parser.h"
+#include "signature_set.h"
 #include "sni_extractor.h"
 #include "tcp_reassembler.h"
+#include "tls_fingerprint.h"
 #include "types.h"
 
 using namespace PacketAnalyzer;
@@ -115,6 +117,9 @@ struct FlowEntry {
     uint64_t bytes = 0;
     bool blocked = false;
     bool classified = false;
+    std::string ja3;
+    std::string ja4;
+    std::string app_label;  // richest signature label (may be a custom name)
     std::unique_ptr<TcpReassembler> reasm;  // client first-flight, lazily created
 };
 
@@ -189,13 +194,28 @@ struct Stats {
     std::mutex app_mutex;
     std::unordered_map<AppType, uint64_t> app_counts;
     std::unordered_map<std::string, AppType> detected_snis;
-    
+    std::unordered_map<std::string, uint64_t> ja3_counts;   // ja3 md5 -> flows
+    std::unordered_map<std::string, uint64_t> ja4_counts;
+
     void recordApp(AppType app, const std::string& sni) {
         std::lock_guard<std::mutex> lock(app_mutex);
         app_counts[app]++;
         if (!sni.empty()) {
             detected_snis[sni] = app;
         }
+    }
+    std::unordered_map<std::string, uint64_t> label_counts;  // signature label -> flows
+
+    void recordFingerprint(const std::string& ja3, const std::string& ja4) {
+        if (ja3.empty() && ja4.empty()) return;
+        std::lock_guard<std::mutex> lock(app_mutex);
+        if (!ja3.empty()) ja3_counts[ja3]++;
+        if (!ja4.empty()) ja4_counts[ja4]++;
+    }
+    void recordLabel(const std::string& label) {
+        if (label.empty()) return;
+        std::lock_guard<std::mutex> lock(app_mutex);
+        label_counts[label]++;
     }
 };
 
@@ -290,10 +310,20 @@ private:
             }
             const auto& buf = flow.reasm->data();
 
-            if (is_tls && buf.size() > 5) {
-                if (auto sni = SNIExtractor::extract(buf.data(), buf.size())) {
-                    flow.sni = *sni;
-                    flow.app_type = sniToAppType(*sni);
+            if (is_tls && buf.size() > 9) {
+                TlsClientHello ch;
+                if (parseClientHello(buf.data(), buf.size(), ch)) {
+                    flow.ja3 = ja3(ch);
+                    flow.ja4 = ja4(ch);
+                    if (ch.has_sni) flow.sni = ch.sni;
+
+                    // Richest label: host -> JA3 -> JA4 (custom names allowed).
+                    flow.app_label = classifyLabel(flow.sni, ja3String(ch), flow.ja3, flow.ja4);
+                    AppType t = labelToAppType(flow.app_label);
+                    flow.app_type = (t != AppType::UNKNOWN) ? t : AppType::HTTPS;
+
+                    stats_->recordFingerprint(flow.ja3, flow.ja4);
+                    stats_->recordLabel(flow.app_label);
                     flow.classified = true;
                     flow.reasm.reset();
                     return;
@@ -622,6 +652,20 @@ private:
                 std::cout << "  - " << sni << " -> " << appTypeToString(app) << "\n";
             }
         }
+
+        if (!stats_.label_counts.empty()) {
+            std::cout << "\n[Signature Labels]\n";
+            for (const auto& [lbl, n] : stats_.label_counts)
+                std::cout << "  " << lbl << "  x" << n << "\n";
+        }
+
+        if (!stats_.ja3_counts.empty()) {
+            std::cout << "\n[TLS Fingerprints]\n";
+            for (const auto& [fp, n] : stats_.ja3_counts)
+                std::cout << "  JA3  " << fp << "  x" << n << "\n";
+            for (const auto& [fp, n] : stats_.ja4_counts)
+                std::cout << "  JA4  " << fp << "  x" << n << "\n";
+        }
     }
 };
 
@@ -670,6 +714,11 @@ int main(int argc, char* argv[]) {
         else if (a == "--lbs") cfg.num_lbs = std::stoi(val());
         else if (a == "--fps") cfg.fps_per_lb = std::stoi(val());
         else { std::cerr << "prism: unknown option '" << a << "'\n"; return 2; }
+    }
+
+    if (!opt.signatures.empty() && !loadSignatureFile(opt.signatures, err)) {
+        std::cerr << "prism: " << err << "\n";
+        return 1;
     }
 
     auto source = openSource(opt, err);

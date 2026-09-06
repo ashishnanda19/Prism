@@ -21,9 +21,10 @@ namespace PacketAnalyzer {
 // (--block-*, --lbs, --fps, ...).
 // ============================================================================
 struct RunOptions {
-    std::string pcap_in;   // file mode: path to a .pcap  (mutually exclusive with iface)
-    std::string iface;     // live mode: interface name   (needs root / CAP_NET_RAW)
-    std::string pcap_out;  // where forwarded frames are written
+    std::string pcap_in;      // file mode: path to a .pcap  (mutually exclusive with iface)
+    std::string iface;        // live mode: interface name   (needs root / CAP_NET_RAW)
+    std::string pcap_out;     // where forwarded frames are written
+    std::string signatures;   // optional: replace the built-in signature set
 
     long max_frames = -1;      // stop after N frames read (-1 = unlimited)
     int  snaplen    = 262144;  // bytes captured per frame (live)

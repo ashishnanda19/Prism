@@ -90,6 +90,7 @@ enum class AppType {
 
 std::string appTypeToString(AppType type);
 AppType sniToAppType(const std::string& sni);
+AppType labelToAppType(const std::string& label);  // inverse of appTypeToString
 
 // ============================================================================
 // Connection State
@@ -120,6 +121,8 @@ struct Connection {
     ConnectionState state = ConnectionState::NEW;
     AppType app_type = AppType::UNKNOWN;
     std::string sni;  // Server Name Indication (if detected)
+    std::string ja3;  // JA3 md5 of the ClientHello (if TLS)
+    std::string ja4;  // JA4 fingerprint of the ClientHello (if TLS)
     
     uint64_t packets_in = 0;
     uint64_t packets_out = 0;
