@@ -2,6 +2,8 @@
 
 **Author:** Ashish Kumar Nanda
 
+[![CI](https://github.com/ashishnanda19/Prism/actions/workflows/ci.yml/badge.svg)](https://github.com/ashishnanda19/Prism/actions/workflows/ci.yml)
+
 > **Prism** takes an opaque stream of packets and splits it into its components —
 > flows, applications, and verdicts — the way a glass prism splits light.
 
@@ -910,6 +912,26 @@ ctest --test-dir build --output-on-failure
 # or run the binary directly for doctest filtering:
 ./build/bin/prism_tests --test-case="*SNI*"
 ```
+
+### Sanitizers & fuzzing
+
+```bash
+# ASan + UBSan (use thread for TSan)
+cmake -S . -B build-asan -DCMAKE_CXX_COMPILER=clang++ \
+      -DCMAKE_BUILD_TYPE=Debug -DPRISM_SANITIZE=address,undefined
+cmake --build build-asan -j && ctest --test-dir build-asan --output-on-failure
+
+# libFuzzer harnesses for the parsers (Clang; standalone replay elsewhere)
+cmake -S . -B build-fuzz -DCMAKE_CXX_COMPILER=clang++ \
+      -DPRISM_BUILD_FUZZERS=ON -DPRISM_BUILD_TESTS=OFF -DPRISM_SANITIZE=address,undefined
+cmake --build build-fuzz -j
+python3 fuzz/seed_corpus.py
+./build-fuzz/bin/fuzz_sni_extractor -max_total_time=60 fuzz/corpus/sni_extractor
+```
+
+See [fuzz/README.md](fuzz/README.md). CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml))
+runs the build across gcc / clang / macOS, the suite under ASan+UBSan and TSan,
+clang-tidy, and a 60 s fuzz smoke run per harness on every push and PR.
 
 ### Running an engine
 

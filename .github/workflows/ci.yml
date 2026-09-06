@@ -1,0 +1,175 @@
+# =============================================================================
+# Prism - Continuous Integration
+# Author: Ashish Kumar Nanda
+# =============================================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Build + unit tests across compilers / OSes
+  # ---------------------------------------------------------------------------
+  build-test:
+    name: build+test (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # TODO: flip werror ON for gcc once its stricter -Wshadow is clean.
+          - { name: linux-gcc,   os: ubuntu-latest, cc: gcc,   cxx: g++,     werror: "OFF" }
+          - { name: linux-clang, os: ubuntu-latest, cc: clang, cxx: clang++, werror: "ON" }
+          - { name: macos-clang, os: macos-latest,  cc: clang, cxx: clang++, werror: "ON" }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G "Unix Makefiles"
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DPRISM_WERROR=${{ matrix.werror }}
+          -DCMAKE_C_COMPILER=${{ matrix.cc }}
+          -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}
+
+      - name: Build
+        run: cmake --build build -j
+
+      - name: Unit tests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Engine smoke test
+        run: |
+          set -e
+          for e in prism prism-lite prism-classic; do
+            ./build/bin/$e test_dpi.pcap "out-$e.pcap"
+            test -s "out-$e.pcap"
+          done
+          ./build/bin/prism-dump test_dpi.pcap > /dev/null
+
+  # ---------------------------------------------------------------------------
+  # Sanitized unit tests: ASan+UBSan (blocking) and TSan (blocking for tests)
+  # ---------------------------------------------------------------------------
+  sanitizers:
+    name: sanitize (${{ matrix.san }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        san: ["address,undefined", "thread"]
+    env:
+      ASAN_OPTIONS: detect_leaks=1:strict_string_checks=1:halt_on_error=1
+      UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+      TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Clang
+        run: sudo apt-get update && sudo apt-get install -y clang
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G "Unix Makefiles"
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+          -DPRISM_SANITIZE=${{ matrix.san }}
+
+      - name: Build
+        run: cmake --build build -j
+
+      - name: Unit tests (sanitized)
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Engines (sanitized)
+        # ASan/UBSan findings in the engines are real -> fail. The threading
+        # engines still have known data-race debt (roadmap steps 3-6), so TSan
+        # engine runs are informational until that lands.
+        continue-on-error: ${{ matrix.san == 'thread' }}
+        run: |
+          set -e
+          ./build/bin/prism-lite   test_dpi.pcap out-lite.pcap
+          ./build/bin/prism        test_dpi.pcap out-mt.pcap
+          ./build/bin/prism-classic test_dpi.pcap out-classic.pcap
+
+  # ---------------------------------------------------------------------------
+  # Static analysis
+  # ---------------------------------------------------------------------------
+  clang-tidy:
+    name: clang-tidy
+    runs-on: ubuntu-latest
+    # TODO: drop once the existing tree is clean under .clang-tidy.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install clang-tidy
+        run: sudo apt-get update && sudo apt-get install -y clang clang-tidy
+
+      - name: Configure (compile_commands.json)
+        run: >
+          cmake -S . -B build -G "Unix Makefiles"
+          -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+          -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          -DPRISM_BUILD_TESTS=OFF
+
+      - name: Run clang-tidy over src/
+        run: |
+          FILES=$(git ls-files 'src/*.cpp')
+          echo "$FILES"
+          clang-tidy -p build --warnings-as-errors='' $FILES
+
+  # ---------------------------------------------------------------------------
+  # Fuzzing smoke run (each harness, short budget, ASan+UBSan)
+  # ---------------------------------------------------------------------------
+  fuzz:
+    name: fuzz (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [packet_parser, sni_extractor, quic_sni, http_host, dns, pcap_reader]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Clang
+        run: sudo apt-get update && sudo apt-get install -y clang
+
+      - name: Configure
+        run: >
+          cmake -S . -B build-fuzz -G "Unix Makefiles"
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+          -DPRISM_BUILD_FUZZERS=ON -DPRISM_BUILD_TESTS=OFF
+          -DPRISM_SANITIZE=address,undefined
+
+      - name: Build harness
+        run: cmake --build build-fuzz --target fuzz_${{ matrix.target }} -j
+
+      - name: Seed corpus
+        run: python3 fuzz/seed_corpus.py
+
+      - name: Fuzz (60s)
+        run: >
+          ./build-fuzz/bin/fuzz_${{ matrix.target }}
+          -max_total_time=60 -timeout=10 -rss_limit_mb=2048 -print_final_stats=1
+          fuzz/corpus/${{ matrix.target }}
+
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crash-${{ matrix.target }}
+          path: |
+            crash-*
+            timeout-*
+            oom-*
+          if-no-files-found: ignore

@@ -9,12 +9,25 @@
 #include <iomanip>
 #include <cstring>
 
-// Portable byte order helpers (defined in platform.h). Named to avoid the
-// ntohs/ntohl system macros, which would otherwise trigger -Wmacro-redefined.
-using PortableNet::netToHost16;
-using PortableNet::netToHost32;
-
 namespace PacketAnalyzer {
+
+namespace {
+
+// Read a big-endian integer from a possibly-unaligned wire location.
+// memcpy (not a reinterpret_cast deref) so this is well-defined under
+// -fsanitize=alignment and portable to strict-alignment targets.
+inline uint16_t readBE16(const uint8_t* p) {
+    uint16_t v;
+    std::memcpy(&v, p, sizeof(v));
+    return PortableNet::netToHost16(v);
+}
+inline uint32_t readBE32(const uint8_t* p) {
+    uint32_t v;
+    std::memcpy(&v, p, sizeof(v));
+    return PortableNet::netToHost32(v);
+}
+
+}  // namespace
 
 bool PacketParser::parse(const RawPacket& raw, ParsedPacket& parsed) {
     // Initialize parsed packet
@@ -77,7 +90,7 @@ bool PacketParser::parseEthernet(const uint8_t* data, size_t len,
     parsed.src_mac = macToString(data + 6);
     
     // Parse EtherType (bytes 12-13, big-endian)
-    parsed.ether_type = netToHost16(*reinterpret_cast<const uint16_t*>(data + 12));
+    parsed.ether_type = readBE16(data + 12);
     
     offset = ETH_HEADER_LEN;
     return true;
@@ -140,16 +153,16 @@ bool PacketParser::parseTCP(const uint8_t* data, size_t len,
     const uint8_t* tcp_data = data + offset;
     
     // Source port (bytes 0-1)
-    parsed.src_port = netToHost16(*reinterpret_cast<const uint16_t*>(tcp_data));
+    parsed.src_port = readBE16(tcp_data);
     
     // Destination port (bytes 2-3)
-    parsed.dest_port = netToHost16(*reinterpret_cast<const uint16_t*>(tcp_data + 2));
+    parsed.dest_port = readBE16(tcp_data + 2);
     
     // Sequence number (bytes 4-7)
-    parsed.seq_number = netToHost32(*reinterpret_cast<const uint32_t*>(tcp_data + 4));
+    parsed.seq_number = readBE32(tcp_data + 4);
     
     // Acknowledgment number (bytes 8-11)
-    parsed.ack_number = netToHost32(*reinterpret_cast<const uint32_t*>(tcp_data + 8));
+    parsed.ack_number = readBE32(tcp_data + 8);
     
     // Data offset (upper 4 bits of byte 12) - header length in 32-bit words
     uint8_t data_offset = (tcp_data[12] >> 4) & 0x0F;
@@ -180,10 +193,10 @@ bool PacketParser::parseUDP(const uint8_t* data, size_t len,
     const uint8_t* udp_data = data + offset;
     
     // Source port (bytes 0-1)
-    parsed.src_port = netToHost16(*reinterpret_cast<const uint16_t*>(udp_data));
+    parsed.src_port = readBE16(udp_data);
     
     // Destination port (bytes 2-3)
-    parsed.dest_port = netToHost16(*reinterpret_cast<const uint16_t*>(udp_data + 2));
+    parsed.dest_port = readBE16(udp_data + 2);
     
     parsed.has_udp = true;
     offset += UDP_HEADER_LEN;

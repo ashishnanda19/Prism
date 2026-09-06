@@ -22,6 +22,7 @@ endif()
 # Options
 # ---------------------------------------------------------------------------
 option(PRISM_BUILD_TESTS   "Build the Prism unit test suite"            ON)
+option(PRISM_BUILD_FUZZERS "Build the libFuzzer parser harnesses (Clang only)" OFF)
 option(PRISM_WERROR        "Treat compiler warnings as errors"          OFF)
 set(PRISM_SANITIZE "" CACHE STRING
     "Comma-separated sanitizer list, e.g. address,undefined or thread")
@@ -41,6 +42,31 @@ if(PRISM_SANITIZE)
     target_compile_options(prism_sanitize INTERFACE
         -fsanitize=${PRISM_SANITIZE} -fno-omit-frame-pointer -g)
     target_link_options(prism_sanitize INTERFACE -fsanitize=${PRISM_SANITIZE})
+endif()
+
+if(PRISM_BUILD_FUZZERS)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        message(FATAL_ERROR "PRISM_BUILD_FUZZERS requires Clang/LLVM")
+    endif()
+    # Is there a libFuzzer runtime to link against? (Apple clang ships none.)
+    include(CheckCXXSourceCompiles)
+    set(CMAKE_REQUIRED_FLAGS "-fsanitize=fuzzer")
+    check_cxx_source_compiles([[
+      #include <cstddef>
+      #include <cstdint>
+      extern "C" int LLVMFuzzerTestOneInput(const uint8_t*, size_t) { return 0; }
+    ]] PRISM_HAVE_LIBFUZZER)
+    unset(CMAKE_REQUIRED_FLAGS)
+
+    if(PRISM_HAVE_LIBFUZZER)
+        # SanitizerCoverage for everything that links prism_sanitize (prism_core
+        # + the harnesses). The __sanitizer_cov_* symbols are resolved by the
+        # -fsanitize=fuzzer the harness exe links (see fuzz/CMakeLists.txt).
+        target_compile_options(prism_sanitize INTERFACE -fsanitize=fuzzer-no-link)
+        message(STATUS "Prism: libFuzzer runtime found -- coverage-guided harnesses")
+    else()
+        message(STATUS "Prism: no libFuzzer runtime -- standalone replay harnesses")
+    endif()
 endif()
 
 find_package(Threads REQUIRED)
@@ -113,10 +139,18 @@ if(PRISM_BUILD_TESTS)
 endif()
 
 # ---------------------------------------------------------------------------
+# Fuzzers
+# ---------------------------------------------------------------------------
+if(PRISM_BUILD_FUZZERS)
+    add_subdirectory(fuzz)
+endif()
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 message(STATUS "Prism ${PROJECT_VERSION}")
 message(STATUS "  build type : ${CMAKE_BUILD_TYPE}")
 message(STATUS "  tests      : ${PRISM_BUILD_TESTS}")
+message(STATUS "  fuzzers    : ${PRISM_BUILD_FUZZERS}")
 message(STATUS "  sanitizers : ${PRISM_SANITIZE}")
 message(STATUS "  engines    : prism (mt), prism-lite (st), prism-classic (mt/components)")

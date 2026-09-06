@@ -291,11 +291,12 @@ std::optional<std::string> QUICSNIExtractor::extract(const uint8_t* payload, siz
     }
     
     // Search for TLS Client Hello pattern within the QUIC packet
-    // Look for the handshake type byte followed by SNI extension
-    for (size_t i = 0; i + 50 < length; i++) {
+    // Look for the handshake type byte followed by SNI extension.
+    // i must be >= 5 so `payload + i - 5` stays inside the buffer.
+    for (size_t i = 5; i + 50 < length; i++) {
         if (payload[i] == 0x01) {  // Client Hello handshake type
-            // Try to extract SNI starting from here
-            auto result = SNIExtractor::extract(payload + i - 5, length - i + 5);
+            // Try to extract SNI starting from the presumed TLS record header.
+            auto result = SNIExtractor::extract(payload + i - 5, length - (i - 5));
             if (result) return result;
         }
     }
