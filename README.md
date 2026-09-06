@@ -870,52 +870,59 @@ Connection to YouTube:
 
 ### Prerequisites
 
-- **macOS/Linux** with C++17 compiler
-- **g++** or **clang++**
-- No external libraries needed!
+- **macOS/Linux** with a C++17 compiler (`g++` or `clang++`)
+- **CMake ≥ 3.16**
+- No external libraries. The test suite vendors [doctest](third_party/doctest/).
 
-### Build Commands
+### Build (CMake)
 
-**Simple Version:**
 ```bash
-g++ -std=c++17 -O2 -I include -o prism-simple \
-    src/main_working.cpp \
-    src/pcap_reader.cpp \
-    src/packet_parser.cpp \
-    src/sni_extractor.cpp \
-    src/types.cpp
+cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
+cmake --build build -j
+
+# binaries land in build/bin/
 ```
 
-**Multi-threaded Version:**
+Useful options:
+
+| Option | Default | Effect |
+|--------|---------|--------|
+| `-DPRISM_BUILD_TESTS=OFF` | `ON`  | skip the unit test target |
+| `-DPRISM_WERROR=ON`       | `OFF` | warnings become errors |
+| `-DPRISM_SANITIZE=address,undefined` | *(off)* | build everything with ASan/UBSan (use `thread` for TSan) |
+
+### Targets
+
+| Binary | Source | What it is |
+|--------|--------|------------|
+| `build/bin/prism`         | `src/dpi_mt.cpp`      | **Multi-threaded engine** — Reader → Load Balancers → Fast-Path workers → Output. Self-contained. |
+| `build/bin/prism-lite`    | `src/main_working.cpp` | **Single-threaded engine** — same classification + blocking, no threads. Easiest to read/debug. |
+| `build/bin/prism-classic` | `src/main_dpi.cpp` + `src/{dpi_engine,fast_path,load_balancer}.cpp` | **Component-structured multi-threaded engine** — `DPIEngine` + `FPManager` + `LBManager` + `GlobalConnectionTable`, wired by dependency injection. The architecture the roadmap builds on. |
+| `build/bin/prism-dump`    | `src/main.cpp`       | Per-packet protocol decoder. No DPI, no blocking. |
+| `build/bin/prism_tests`   | `tests/`            | Unit suite (doctest). Run via `ctest`. |
+
+All three engines share `libprism_core` (`src/{pcap_reader,packet_parser,sni_extractor,types,connection_tracker,rule_manager}.cpp`).
+
+### Test
+
 ```bash
-g++ -std=c++17 -pthread -O2 -I include -o prism \
-    src/dpi_mt.cpp \
-    src/pcap_reader.cpp \
-    src/packet_parser.cpp \
-    src/sni_extractor.cpp \
-    src/types.cpp
+ctest --test-dir build --output-on-failure
+# or run the binary directly for doctest filtering:
+./build/bin/prism_tests --test-case="*SNI*"
 ```
 
-### Running
+### Running an engine
 
-**Basic usage:**
 ```bash
-./prism test_dpi.pcap output.pcap
-```
+./build/bin/prism test_dpi.pcap output.pcap
 
-**With blocking:**
-```bash
-./prism test_dpi.pcap output.pcap \
-    --block-app YouTube \
-    --block-app TikTok \
-    --block-ip 192.168.1.50 \
-    --block-domain facebook
-```
+# with blocking rules
+./build/bin/prism test_dpi.pcap output.pcap \
+    --block-app YouTube --block-app TikTok \
+    --block-ip 192.168.1.50 --block-domain facebook
 
-**Configure threads (multi-threaded only):**
-```bash
-./prism input.pcap output.pcap --lbs 4 --fps 4
-# Creates 4 LB threads × 4 FP threads = 16 processing threads
+# multi-threaded engines accept a thread layout
+./build/bin/prism input.pcap output.pcap --lbs 4 --fps 4   # 4 LB × 4 FP = 16 workers
 ```
 
 ### Creating Test Data

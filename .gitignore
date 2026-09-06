@@ -1,0 +1,28 @@
+# Build output
+build/
+build-*/
+cmake-build-*/
+*.o
+*.obj
+*.a
+*.so
+*.dylib
+
+# Prism binaries
+/prism
+/prism-lite
+/prism-classic
+/prism-dump
+/dpi_engine
+/dpi_simple
+/prism_tests
+
+# Generated captures
+/output.pcap
+*.out.pcap
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+compile_commands.json

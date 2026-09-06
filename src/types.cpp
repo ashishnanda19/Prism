@@ -61,10 +61,20 @@ std::string appTypeToString(AppType type) {
     }
 }
 
+// True if `host` is exactly `domain` or a subdomain of it (ends with ".domain").
+// Used for short, ambiguous brand domains where a plain substring search would
+// false-positive -- e.g. "t.co" inside "raw.githubusercontent.com".
+static bool hostEndsWith(const std::string& host, const std::string& domain) {
+    if (host == domain) return true;
+    if (host.size() <= domain.size()) return false;
+    return host.compare(host.size() - domain.size() - 1,
+                        domain.size() + 1, "." + domain) == 0;
+}
+
 // Map SNI/domain to application type
 AppType sniToAppType(const std::string& sni) {
     if (sni.empty()) return AppType::UNKNOWN;
-    
+
     // Convert to lowercase for matching
     std::string lower_sni = sni;
     std::transform(lower_sni.begin(), lower_sni.end(), lower_sni.begin(),
@@ -83,7 +93,7 @@ AppType sniToAppType(const std::string& sni) {
     // YouTube
     if (lower_sni.find("youtube") != std::string::npos ||
         lower_sni.find("ytimg") != std::string::npos ||
-        lower_sni.find("youtu.be") != std::string::npos ||
+        hostEndsWith(lower_sni, "youtu.be") ||
         lower_sni.find("yt3.ggpht") != std::string::npos) {
         return AppType::YOUTUBE;
     }
@@ -91,9 +101,9 @@ AppType sniToAppType(const std::string& sni) {
     // Facebook/Meta
     if (lower_sni.find("facebook") != std::string::npos ||
         lower_sni.find("fbcdn") != std::string::npos ||
-        lower_sni.find("fb.com") != std::string::npos ||
+        hostEndsWith(lower_sni, "fb.com") ||
         lower_sni.find("fbsbx") != std::string::npos ||
-        lower_sni.find("meta.com") != std::string::npos) {
+        hostEndsWith(lower_sni, "meta.com")) {
         return AppType::FACEBOOK;
     }
     
@@ -105,15 +115,15 @@ AppType sniToAppType(const std::string& sni) {
     
     // WhatsApp (owned by Meta)
     if (lower_sni.find("whatsapp") != std::string::npos ||
-        lower_sni.find("wa.me") != std::string::npos) {
+        hostEndsWith(lower_sni, "wa.me")) {
         return AppType::WHATSAPP;
     }
     
     // Twitter/X
     if (lower_sni.find("twitter") != std::string::npos ||
         lower_sni.find("twimg") != std::string::npos ||
-        lower_sni.find("x.com") != std::string::npos ||
-        lower_sni.find("t.co") != std::string::npos) {
+        hostEndsWith(lower_sni, "x.com") ||
+        hostEndsWith(lower_sni, "t.co")) {
         return AppType::TWITTER;
     }
     
@@ -153,7 +163,7 @@ AppType sniToAppType(const std::string& sni) {
     
     // Telegram
     if (lower_sni.find("telegram") != std::string::npos ||
-        lower_sni.find("t.me") != std::string::npos) {
+        hostEndsWith(lower_sni, "t.me")) {
         return AppType::TELEGRAM;
     }
     

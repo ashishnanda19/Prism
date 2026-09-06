@@ -55,10 +55,8 @@ std::optional<std::string> SNIExtractor::extract(const uint8_t* payload, size_t 
     // Skip TLS record header (5 bytes)
     size_t offset = 5;
     
-    // Skip handshake header
-    // Byte 0: Handshake type (already checked)
-    // Bytes 1-3: Length
-    uint32_t handshake_length = readUint24BE(payload + offset + 1);
+    // Skip handshake header: byte 0 = type (already checked), bytes 1-3 = length
+    // (length is not needed here; extension bounds are re-derived below).
     offset += 4;
     
     // Client Hello body
@@ -133,9 +131,11 @@ std::optional<std::string> SNIExtractor::extract(const uint8_t* payload, size_t 
 
 std::vector<std::pair<uint16_t, std::string>> SNIExtractor::extractExtensions(
     const uint8_t* payload, size_t length) {
-    
+    (void)payload;
+    (void)length;  // TODO: not implemented yet -- see extract() for the parse loop.
+
     std::vector<std::pair<uint16_t, std::string>> extensions;
-    
+
     // Similar parsing logic as extract(), but collect all extensions
     // ... (abbreviated for brevity)
     
@@ -166,8 +166,7 @@ std::optional<std::string> HTTPHostExtractor::extract(const uint8_t* payload, si
         return std::nullopt;
     }
     
-    // Search for "Host: " header
-    const char* host_header = "Host: ";
+    // Search for the "Host:" header (length of "Host:" + one space).
     const size_t host_header_len = 6;
     
     for (size_t i = 0; i + host_header_len < length; i++) {

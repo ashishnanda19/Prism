@@ -223,16 +223,16 @@ PacketAction FastPathProcessor::checkRules(const PacketJob& job, Connection* con
         ss << "[FP" << fp_id_ << "] BLOCKED packet: ";
         
         switch (block_reason->type) {
-            case RuleManager::BlockReason::IP:
+            case RuleManager::BlockReason::Kind::Ip:
                 ss << "IP " << block_reason->detail;
                 break;
-            case RuleManager::BlockReason::APP:
+            case RuleManager::BlockReason::Kind::App:
                 ss << "App " << block_reason->detail;
                 break;
-            case RuleManager::BlockReason::DOMAIN:
+            case RuleManager::BlockReason::Kind::Domain:
                 ss << "Domain " << block_reason->detail;
                 break;
-            case RuleManager::BlockReason::PORT:
+            case RuleManager::BlockReason::Kind::Port:
                 ss << "Port " << block_reason->detail;
                 break;
         }

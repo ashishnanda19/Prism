@@ -96,7 +96,10 @@ public:
     // Check if a packet/connection should be blocked based on all rules
     // Returns the reason if blocked, nullopt if allowed
     struct BlockReason {
-        enum Type { IP, APP, DOMAIN, PORT } type;
+        // Scoped enum: unscoped IP/DOMAIN/PORT collide with system macros
+        // (<math.h> defines DOMAIN, <netinet/in.h> can define others).
+        enum class Kind { Ip, App, Domain, Port };
+        Kind type;
         std::string detail;
     };
     

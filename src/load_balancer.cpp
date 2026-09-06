@@ -21,7 +21,9 @@ LoadBalancer::LoadBalancer(int lb_id,
       num_fps_(fp_queues.size()),
       input_queue_(10000),
       fp_queues_(std::move(fp_queues)),
-      per_fp_counts_(fp_queues.size()) {
+      // NB: size from num_fps_, not fp_queues.size(). Members are initialised
+      // in declaration order, so fp_queues has already been moved-from here.
+      per_fp_counts_(num_fps_) {
 }
 
 LoadBalancer::~LoadBalancer() {
