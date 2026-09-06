@@ -3,6 +3,7 @@
 // Author:  Ashish Kumar Nanda
 // =============================================================================
 
+#include <algorithm>
 #include <iostream>
 #include <iomanip>
 #include <ctime>

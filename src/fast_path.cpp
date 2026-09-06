@@ -4,6 +4,7 @@
 // =============================================================================
 
 #include "fast_path.h"
+#include <algorithm>
 #include <iostream>
 #include <sstream>
 #include <iomanip>
