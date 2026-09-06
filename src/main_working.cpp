@@ -105,7 +105,15 @@ int main(int argc, char* argv[]) {
     
     std::string input_file = argv[1];
     std::string output_file = argv[2];
-    
+
+    // prism-lite keeps the simple positional form: <input.pcap> <output.pcap>.
+    // (prism / prism-classic take -o and --iface; see their --help.)
+    if (input_file[0] == '-' || output_file[0] == '-') {
+        std::cerr << "prism-lite: usage: " << argv[0]
+                  << " <input.pcap> <output.pcap> [--block-* ...]\n";
+        return 2;
+    }
+
     BlockingRules rules;
     
     // Parse options
