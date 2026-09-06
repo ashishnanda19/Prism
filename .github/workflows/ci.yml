@@ -50,10 +50,10 @@ jobs:
       - name: Engine smoke test
         run: |
           set -e
-          for e in prism prism-lite prism-classic; do
-            ./build/bin/$e test_dpi.pcap -o "out-$e.pcap"
-            test -s "out-$e.pcap"
-          done
+          ./build/bin/prism         test_dpi.pcap -o out-prism.pcap
+          ./build/bin/prism-classic test_dpi.pcap -o out-classic.pcap
+          ./build/bin/prism-lite    test_dpi.pcap out-lite.pcap   # positional only
+          for f in out-prism.pcap out-classic.pcap out-lite.pcap; do test -s "$f"; done
           ./build/bin/prism-dump test_dpi.pcap > /dev/null
 
       - name: Live-capture smoke (Linux, loopback)
@@ -110,8 +110,8 @@ jobs:
         run: |
           set -e
           ./build/bin/prism-lite    test_dpi.pcap out-lite.pcap
-          ./build/bin/prism         test_dpi.pcap out-mt.pcap
-          ./build/bin/prism-classic test_dpi.pcap out-classic.pcap
+          ./build/bin/prism         test_dpi.pcap -o out-mt.pcap
+          ./build/bin/prism-classic test_dpi.pcap -o out-classic.pcap
 
   # ---------------------------------------------------------------------------
   # Static analysis (advisory until the tree is clean under .clang-tidy)
