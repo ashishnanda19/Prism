@@ -2,6 +2,9 @@
 # Prism - Continuous Integration
 # Author: Ashish Kumar Nanda
 # =============================================================================
+#
+# Ubuntu's stock clang-18 (noble) can't parse the runner's libstdc++-14
+# headers, so the Linux clang jobs install clang-19 from apt.llvm.org.
 
 name: CI
 
@@ -15,6 +18,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  LLVM_VERSION: "19"
+
 jobs:
   # ---------------------------------------------------------------------------
   # Build + unit tests across compilers / OSes
@@ -27,11 +33,18 @@ jobs:
       matrix:
         include:
           # TODO: flip werror ON for gcc once its stricter -Wshadow is clean.
-          - { name: linux-gcc,   os: ubuntu-latest, cc: gcc,   cxx: g++,     werror: "OFF" }
-          - { name: linux-clang, os: ubuntu-latest, cc: clang, cxx: clang++, werror: "ON" }
-          - { name: macos-clang, os: macos-latest,  cc: clang, cxx: clang++, werror: "ON" }
+          - { name: linux-gcc,   os: ubuntu-latest, cc: gcc,        cxx: g++,          werror: "OFF" }
+          - { name: linux-clang, os: ubuntu-latest, cc: clang-19,   cxx: clang++-19,   werror: "ON"  }
+          - { name: macos-clang, os: macos-latest,  cc: clang,      cxx: clang++,      werror: "ON"  }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+
+      - name: Install clang ${{ env.LLVM_VERSION }} (linux-clang)
+        if: matrix.name == 'linux-clang'
+        run: |
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh ${{ env.LLVM_VERSION }}
 
       - name: Configure
         run: >
@@ -67,20 +80,26 @@ jobs:
       matrix:
         san: ["address,undefined", "thread"]
     env:
+      CC: clang-19
+      CXX: clang++-19
       ASAN_OPTIONS: detect_leaks=1:strict_string_checks=1:halt_on_error=1
       UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
       TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - name: Install Clang
-        run: sudo apt-get update && sudo apt-get install -y clang
+      - name: Install clang ${{ env.LLVM_VERSION }} + runtimes
+        run: |
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh ${{ env.LLVM_VERSION }}
+          sudo apt-get install -y libclang-rt-${{ env.LLVM_VERSION }}-dev
 
       - name: Configure
         run: >
           cmake -S . -B build -G "Unix Makefiles"
           -DCMAKE_BUILD_TYPE=Debug
-          -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+          -DCMAKE_C_COMPILER=$CC -DCMAKE_CXX_COMPILER=$CXX
           -DPRISM_SANITIZE=${{ matrix.san }}
 
       - name: Build
@@ -96,28 +115,30 @@ jobs:
         continue-on-error: ${{ matrix.san == 'thread' }}
         run: |
           set -e
-          ./build/bin/prism-lite   test_dpi.pcap out-lite.pcap
-          ./build/bin/prism        test_dpi.pcap out-mt.pcap
+          ./build/bin/prism-lite    test_dpi.pcap out-lite.pcap
+          ./build/bin/prism         test_dpi.pcap out-mt.pcap
           ./build/bin/prism-classic test_dpi.pcap out-classic.pcap
 
   # ---------------------------------------------------------------------------
-  # Static analysis
+  # Static analysis (advisory until the tree is clean under .clang-tidy)
   # ---------------------------------------------------------------------------
   clang-tidy:
     name: clang-tidy
     runs-on: ubuntu-latest
-    # TODO: drop once the existing tree is clean under .clang-tidy.
-    continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - name: Install clang-tidy
-        run: sudo apt-get update && sudo apt-get install -y clang clang-tidy
+      - name: Install clang-tidy ${{ env.LLVM_VERSION }}
+        run: |
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh ${{ env.LLVM_VERSION }}
+          sudo apt-get install -y clang-tidy-${{ env.LLVM_VERSION }}
 
       - name: Configure (compile_commands.json)
         run: >
           cmake -S . -B build -G "Unix Makefiles"
-          -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+          -DCMAKE_C_COMPILER=clang-19 -DCMAKE_CXX_COMPILER=clang++-19
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
           -DPRISM_BUILD_TESTS=OFF
 
@@ -125,7 +146,8 @@ jobs:
         run: |
           FILES=$(git ls-files 'src/*.cpp')
           echo "$FILES"
-          clang-tidy -p build --warnings-as-errors='' $FILES
+          clang-tidy-${{ env.LLVM_VERSION }} -p build $FILES \
+            || echo "::warning::clang-tidy reported findings (advisory, non-blocking)"
 
   # ---------------------------------------------------------------------------
   # Fuzzing smoke run (each harness, short budget, ASan+UBSan)
@@ -138,16 +160,20 @@ jobs:
       matrix:
         target: [packet_parser, sni_extractor, quic_sni, http_host, dns, pcap_reader]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - name: Install Clang
-        run: sudo apt-get update && sudo apt-get install -y clang
+      - name: Install clang ${{ env.LLVM_VERSION }} + runtimes
+        run: |
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh ${{ env.LLVM_VERSION }}
+          sudo apt-get install -y libclang-rt-${{ env.LLVM_VERSION }}-dev
 
       - name: Configure
         run: >
           cmake -S . -B build-fuzz -G "Unix Makefiles"
           -DCMAKE_BUILD_TYPE=Debug
-          -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+          -DCMAKE_C_COMPILER=clang-19 -DCMAKE_CXX_COMPILER=clang++-19
           -DPRISM_BUILD_FUZZERS=ON -DPRISM_BUILD_TESTS=OFF
           -DPRISM_SANITIZE=address,undefined
 
