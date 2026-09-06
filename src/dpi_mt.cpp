@@ -809,8 +809,15 @@ static int runExplain(int argc, char* argv[]) {
     return 0;
 }
 
+int runDevTool(int argc, char* argv[]);  // src/dev_tools.cpp
+
 int main(int argc, char* argv[]) {
     if (argc >= 2 && std::string(argv[1]) == "explain") return runExplain(argc, argv);
+    if (argc >= 2) {
+        const std::string sub = argv[1];
+        if (sub == "sig" || sub == "fp" || sub == "reasm" || sub == "hash")
+            return runDevTool(argc, argv);
+    }
 
     RunOptions opt;
     std::string err;

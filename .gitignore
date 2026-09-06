@@ -41,3 +41,6 @@ fuzz/corpus/pcap_reader/capture_full
 
 # stray output file from `prism-lite in.pcap -o out` (prism-lite has no -o)
 /-o
+
+# dashboard runtime state (uploaded captures)
+dashboard/uploads/

@@ -1029,6 +1029,24 @@ The classification decision lives in one place ([classify.h](include/classify.h)
 — host/SNI → JA3 → JA4 → port fallback, same order and rules as the engines —
 so an explanation matches what `prism` would actually do with the flow.
 
+### Dev dashboard
+
+A single-file web dashboard drives every part of the project from a browser — run
+any of the four engines over a capture, walk a flow with `explain`, edit the
+signature DSL and test it, fingerprint a raw ClientHello, drive the TCP
+reassembler segment by segment, hash with the built-in MD5/SHA-256, start a
+looped/live capture and watch `/metrics` update, and build + run the test suite.
+
+```bash
+cmake --build build -j          # engines must be built first
+python3 dashboard/server.py     # -> http://127.0.0.1:7070
+```
+
+Stdlib-only Python backend ([dashboard/server.py](dashboard/server.py)), vanilla-JS
+frontend ([dashboard/index.html](dashboard/index.html)) — no dependencies. It binds
+to `127.0.0.1` only and shells out to the local `build/bin/prism*` binaries; it is
+a developer tool for your own machine, not a service to expose.
+
 ---
 
 ## 11. Understanding the Output

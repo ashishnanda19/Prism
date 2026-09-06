@@ -116,7 +116,7 @@ endfunction()
 # Engine 1:  prism        -- multi-threaded pipeline (self-contained)
 #   Reader -> Load Balancers -> Fast-Path workers -> Output writer.
 # ---------------------------------------------------------------------------
-prism_add_engine(prism src/dpi_mt.cpp)
+prism_add_engine(prism src/dpi_mt.cpp src/dev_tools.cpp)
 
 # ---------------------------------------------------------------------------
 # Engine 2:  prism-lite   -- single-threaded reference engine

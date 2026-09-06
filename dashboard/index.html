@@ -1,0 +1,721 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prism — Dev Dashboard</title>
+<style>
+  :root{
+    --bg:#0d1117; --bg2:#12181f; --panel:#161c24; --panel2:#1b232d;
+    --line:#232c37; --line2:#2c3742;
+    --fg:#d7dee7; --fg-dim:#8b98a6; --fg-mut:#5f6c7b;
+    --accent:#5aa2ff; --accent-dim:#2b4a73;
+    --ok:#3fb950; --warn:#d29922; --bad:#f85149;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 var(--sans)}
+  a{color:var(--accent);text-decoration:none}
+  h1,h2,h3{margin:0;font-weight:600;letter-spacing:.2px}
+  code,kbd{font-family:var(--mono);font-size:12.5px}
+  button{font:inherit}
+  input,select,textarea{
+    font:13px var(--sans);background:var(--bg2);color:var(--fg);
+    border:1px solid var(--line2);border-radius:6px;padding:7px 9px;outline:none;
+  }
+  input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+  textarea{font-family:var(--mono);font-size:12.5px;resize:vertical;width:100%}
+  ::placeholder{color:var(--fg-mut)}
+
+  .app{display:grid;grid-template-columns:216px 1fr;min-height:100vh}
+  /* sidebar */
+  .side{background:var(--bg2);border-right:1px solid var(--line);padding:18px 14px;position:sticky;top:0;height:100vh;overflow:auto}
+  .brand{display:flex;align-items:baseline;gap:8px;padding:0 6px 4px}
+  .brand b{font-size:17px}
+  .brand span{color:var(--fg-mut);font-size:11px}
+  .prism-mark{width:14px;height:14px;flex:0 0 14px;transform:rotate(45deg);
+    background:conic-gradient(from 0deg,#5aa2ff,#8b5cf6,#3fb950,#5aa2ff);border-radius:3px}
+  nav{margin-top:14px;display:flex;flex-direction:column;gap:2px}
+  nav a{display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:6px;color:var(--fg-dim);font-size:13px}
+  nav a:hover{background:var(--panel);color:var(--fg)}
+  nav a.on{background:var(--accent-dim);color:#fff}
+  nav .dot{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.6}
+  .side-foot{margin-top:18px;padding:10px 8px 0;border-top:1px solid var(--line);color:var(--fg-mut);font-size:11px}
+
+  /* main */
+  main{padding:22px 26px 60px;max-width:1140px}
+  .topbar{display:flex;align-items:center;gap:14px;margin-bottom:20px}
+  .topbar h1{font-size:19px}
+  .pill{font-size:11px;padding:3px 9px;border-radius:999px;border:1px solid var(--line2);color:var(--fg-dim)}
+  .pill.ok{color:var(--ok);border-color:#1f5127}
+  .pill.bad{color:var(--bad);border-color:#5c1f1c}
+  .pill.warn{color:var(--warn);border-color:#5c471a}
+
+  section.view{display:none}
+  section.view.on{display:block}
+  .lead{color:var(--fg-dim);margin:-6px 0 18px;font-size:13px;max-width:70ch}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin-bottom:16px}
+  .card h3{font-size:13px;text-transform:uppercase;letter-spacing:.6px;color:var(--fg-dim);margin-bottom:12px}
+  .row{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+  .field{display:flex;flex-direction:column;gap:4px}
+  .field label{font-size:11px;color:var(--fg-mut);text-transform:uppercase;letter-spacing:.5px}
+  .field input,.field select{min-width:150px}
+  .grow{flex:1;min-width:220px}
+
+  .btn{background:var(--panel2);color:var(--fg);border:1px solid var(--line2);border-radius:6px;
+    padding:8px 14px;cursor:pointer;transition:.12s}
+  .btn:hover{border-color:var(--accent);color:#fff}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#04122a;font-weight:600}
+  .btn.primary:hover{filter:brightness(1.08)}
+  .btn.ghost{background:transparent}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .btn.sm{padding:5px 10px;font-size:12px}
+
+  .out{background:#0b0f14;border:1px solid var(--line);border-radius:8px;padding:12px 14px;
+    font-family:var(--mono);font-size:12px;white-space:pre-wrap;word-break:break-word;
+    max-height:520px;overflow:auto;color:#c9d3de;margin-top:12px}
+  .out:empty{display:none}
+  .out .e{color:var(--bad)} .out .g{color:var(--ok)} .out .d{color:var(--fg-mut)}
+
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+  .stat .k{font-size:11px;color:var(--fg-mut);text-transform:uppercase;letter-spacing:.6px}
+  .stat .v{font-size:20px;font-weight:600;margin-top:4px}
+  .stat .v.ok{color:var(--ok)} .stat .v.bad{color:var(--bad)}
+
+  table{border-collapse:collapse;width:100%;font-size:12.5px;margin-top:8px}
+  th,td{text-align:left;padding:6px 10px;border-bottom:1px solid var(--line)}
+  th{color:var(--fg-mut);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+  td.num{text-align:right;font-family:var(--mono)}
+  .bar{height:8px;border-radius:4px;background:var(--accent);min-width:2px}
+
+  .badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:5px;border:1px solid var(--line2);color:var(--fg-dim)}
+  .badge.f{color:var(--ok);border-color:#1f5127}
+  .badge.d{color:var(--bad);border-color:#5c1f1c;background:#2a1513}
+
+  .flow{border:1px solid var(--line);border-radius:10px;margin-bottom:12px;overflow:hidden}
+  .flow .fh{display:flex;align-items:center;gap:10px;padding:11px 14px;background:var(--panel2);cursor:pointer}
+  .flow .fh .t{font-family:var(--mono);font-size:12.5px}
+  .flow .fb{padding:12px 16px;display:none;border-top:1px solid var(--line)}
+  .flow.open .fb{display:block}
+  .kv{display:grid;grid-template-columns:130px 1fr;gap:3px 12px;font-size:12.5px}
+  .kv .kk{color:var(--fg-mut)}
+  .kv .vv{font-family:var(--mono);word-break:break-all}
+  .tl{margin-top:10px;font-family:var(--mono);font-size:11.5px;color:var(--fg-dim);border-left:2px solid var(--line2);padding-left:12px}
+  .tl div{padding:1px 0}
+
+  .seg-rows{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
+  .seg-rows .sr{display:flex;gap:8px;align-items:center}
+  .seg-rows .sr input[type=text]{flex:1}
+  .muted{color:var(--fg-mut);font-size:12px}
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:900px){.split{grid-template-columns:1fr}.app{grid-template-columns:1fr}.side{position:static;height:auto}}
+  .hint{font-size:11.5px;color:var(--fg-mut);margin-top:5px}
+  .taglist{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+  .tag{font-size:11px;background:var(--panel2);border:1px solid var(--line2);border-radius:5px;padding:3px 7px;cursor:pointer}
+  .tag:hover{border-color:var(--accent)}
+  .spin{display:inline-block;width:12px;height:12px;border:2px solid var(--line2);border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand"><i class="prism-mark"></i><b>Prism</b><span>dev dashboard</span></div>
+    <nav id="nav">
+      <a data-v="overview" class="on"><i class="dot"></i>Overview</a>
+      <a data-v="analyze"><i class="dot"></i>Analyze capture</a>
+      <a data-v="explain"><i class="dot"></i>Explain a flow</a>
+      <a data-v="signatures"><i class="dot"></i>Signatures (DSL)</a>
+      <a data-v="fp"><i class="dot"></i>TLS fingerprints</a>
+      <a data-v="reasm"><i class="dot"></i>TCP reassembler</a>
+      <a data-v="hash"><i class="dot"></i>Hashes</a>
+      <a data-v="live"><i class="dot"></i>Live &amp; metrics</a>
+      <a data-v="build"><i class="dot"></i>Build &amp; tests</a>
+    </nav>
+    <div class="side-foot">
+      <div id="gitrev">—</div>
+      <div style="margin-top:4px">binaries: <span id="binstat">checking…</span></div>
+    </div>
+  </aside>
+
+  <main>
+    <div class="topbar">
+      <h1 id="vtitle">Overview</h1>
+      <span class="pill" id="buildpill">build: …</span>
+      <span class="pill" id="testpill" style="display:none"></span>
+    </div>
+
+    <!-- ================= OVERVIEW ================= -->
+    <section class="view on" id="v-overview">
+      <p class="lead">Prism is a from-scratch C++17 deep-packet-inspection engine. This dashboard
+      drives every binary and library primitive in the project so you can run and inspect each
+      feature. The backend shells out to <code>build/bin/prism*</code> on this machine.</p>
+      <div class="cards" id="statcards"></div>
+      <div class="card">
+        <h3>What you can do here</h3>
+        <table>
+          <tr><th>Area</th><th>Backed by</th></tr>
+          <tr><td>Analyze capture</td><td><code>prism</code> / <code>prism-lite</code> / <code>prism-classic</code> / <code>prism-dump</code> on a .pcap</td></tr>
+          <tr><td>Explain a flow</td><td><code>prism explain &lt;pcap&gt; &lt;flow&gt; [--json] [--block-*]</code></td></tr>
+          <tr><td>Signatures</td><td><code>prism sig (host|ja3|ja3hash|ja4) &lt;v&gt; [--signatures f]</code></td></tr>
+          <tr><td>TLS fingerprints</td><td><code>prism fp &lt;clienthello.hex&gt;</code> — parse + JA3 + JA4</td></tr>
+          <tr><td>TCP reassembler</td><td><code>prism reasm</code> — script of segments</td></tr>
+          <tr><td>Hashes</td><td><code>prism hash (md5|sha256)</code></td></tr>
+          <tr><td>Live &amp; metrics</td><td><code>prism --iface … --metrics … --loop</code> + <code>/metrics</code> scrape</td></tr>
+          <tr><td>Build &amp; tests</td><td><code>cmake --build</code>, <code>ctest</code></td></tr>
+        </table>
+      </div>
+    </section>
+
+    <!-- ================= ANALYZE ================= -->
+    <section class="view" id="v-analyze">
+      <p class="lead">Run an engine over a capture and read the full processing report — packet stats,
+      forward/drop counts, application breakdown, detected SNIs, JA3/JA4, and signature labels. The
+      forwarded output is written to a downloadable pcap.</p>
+      <div class="card">
+        <h3>Input</h3>
+        <div class="row">
+          <div class="field"><label>Engine</label>
+            <select id="an-engine">
+              <option value="prism">prism (multi-threaded)</option>
+              <option value="prism-classic">prism-classic (component MT)</option>
+              <option value="prism-lite">prism-lite (single-threaded)</option>
+              <option value="prism-dump">prism-dump (per-packet decoder)</option>
+            </select></div>
+          <div class="field grow"><label>Capture (.pcap)</label>
+            <select id="an-pcap"></select></div>
+          <div class="field"><label>&nbsp;</label>
+            <label class="btn sm ghost" style="cursor:pointer">upload…<input type="file" id="an-up" accept=".pcap" hidden></label></div>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <div class="field"><label>--block-app</label><input id="an-bapp" placeholder="YouTube"></div>
+          <div class="field"><label>--block-domain</label><input id="an-bdom" placeholder="tiktok"></div>
+          <div class="field"><label>--block-ip</label><input id="an-bip" placeholder="10.0.0.9"></div>
+          <div class="field"><label>--lbs</label><input id="an-lbs" type="number" min="1" style="width:70px" placeholder="2"></div>
+          <div class="field"><label>--fps</label><input id="an-fps" type="number" min="1" style="width:70px" placeholder="2"></div>
+          <div class="field"><label>--count</label><input id="an-count" type="number" min="1" style="width:90px" placeholder="all"></div>
+        </div>
+        <details style="margin-top:10px"><summary class="muted">custom signature rules (optional — replaces the built-ins)</summary>
+          <textarea id="an-sig" rows="5" placeholder="contains  twitch   Twitch&#10;ja3hash   &lt;md5&gt;  Tor"></textarea></details>
+        <div class="row" style="margin-top:12px">
+          <button class="btn primary" id="an-run">Run engine</button>
+          <span id="an-dl"></span>
+        </div>
+      </div>
+      <div id="an-summary"></div>
+      <div class="out" id="an-out"></div>
+    </section>
+
+    <!-- ================= EXPLAIN ================= -->
+    <section class="view" id="v-explain">
+      <p class="lead">Replay a capture and get the full decision trace for a flow: reassembled first
+      flight, parsed ClientHello, JA3/JA4, the exact signature rule that matched, the FORWARD/DROP
+      verdict, and a packet-by-packet timeline.</p>
+      <div class="card">
+        <h3>Input</h3>
+        <div class="row">
+          <div class="field grow"><label>Capture</label><select id="ex-pcap"></select></div>
+          <div class="field grow"><label>Flow — <span class="muted">ip:port-ip:port | ip:port | ip | :port | blank = all</span></label>
+            <input id="ex-flow" list="ex-flows" placeholder=":443"></div>
+          <datalist id="ex-flows"></datalist>
+          <button class="btn sm ghost" id="ex-scan">scan flows</button>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <div class="field"><label>--block-app</label><input id="ex-bapp" placeholder="YouTube"></div>
+          <div class="field"><label>--block-domain</label><input id="ex-bdom"></div>
+          <div class="field"><label>--block-ip</label><input id="ex-bip"></div>
+          <div class="field"><label>--block-port</label><input id="ex-bport" type="number" style="width:90px"></div>
+        </div>
+        <div class="row" style="margin-top:12px">
+          <button class="btn primary" id="ex-run">Explain</button>
+          <label class="muted"><input type="checkbox" id="ex-raw"> show raw JSON</label>
+        </div>
+      </div>
+      <div id="ex-result"></div>
+      <div class="out" id="ex-out"></div>
+    </section>
+
+    <!-- ================= SIGNATURES ================= -->
+    <section class="view" id="v-signatures">
+      <p class="lead">The classification DSL. Rules map an SNI/host, a JA3, or a JA4 to an app label;
+      first match wins. Edit the ruleset and test it against any value.</p>
+      <div class="split">
+        <div class="card">
+          <h3>Ruleset <span class="muted">— blank = built-in defaults</span></h3>
+          <textarea id="sg-rules" rows="16" placeholder="# one rule per line&#10;suffix    youtu.be        YouTube&#10;contains  googlevideo     YouTube&#10;exact     t.co            Twitter/X&#10;ja3hash   &lt;md5&gt;          Tor&#10;ja4prefix t13d            ModernTLS13"></textarea>
+          <div class="hint">kinds: <code>suffix</code> <code>contains</code> <code>exact</code> <code>ja3</code> <code>ja3hash</code> <code>ja4</code> <code>ja4prefix</code></div>
+        </div>
+        <div class="card">
+          <h3>Test a value</h3>
+          <div class="row">
+            <div class="field"><label>kind</label>
+              <select id="sg-kind"><option>host</option><option>ja3</option><option>ja3hash</option><option>ja4</option></select></div>
+            <div class="field grow"><label>value</label><input id="sg-val" placeholder="i.ytimg.com"></div>
+            <button class="btn primary" id="sg-test">Match</button>
+          </div>
+          <div class="taglist">
+            <span class="tag" data-k="host" data-v="i.ytimg.com">i.ytimg.com</span>
+            <span class="tag" data-k="host" data-v="raw.githubusercontent.com">raw.githubusercontent.com</span>
+            <span class="tag" data-k="host" data-v="unknown.example">unknown.example</span>
+          </div>
+          <div class="out" id="sg-out"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= FINGERPRINTS ================= -->
+    <section class="view" id="v-fp">
+      <p class="lead">Paste the hex of a TLS record starting at content-type <code>0x16</code>
+      (a ClientHello). Prism parses it and derives JA3 + JA4.</p>
+      <div class="card">
+        <h3>ClientHello (hex)</h3>
+        <textarea id="fp-hex" rows="6" placeholder="1603010049010000450303..."></textarea>
+        <div class="row" style="margin-top:10px">
+          <button class="btn primary" id="fp-run">Fingerprint</button>
+          <button class="btn ghost sm" id="fp-sample">load a sample</button>
+          <label class="muted"><input type="checkbox" id="fp-quic"> QUIC (JA4 'q' prefix)</label>
+        </div>
+      </div>
+      <div id="fp-result"></div>
+      <div class="out" id="fp-out"></div>
+    </section>
+
+    <!-- ================= REASSEMBLER ================= -->
+    <section class="view" id="v-reasm">
+      <p class="lead">Drive <code>TcpReassembler</code> directly. Each segment is a sequence number,
+      a SYN flag, and a payload (text). The reassembler orders by sequence, merges overlaps, and
+      caps its buffer.</p>
+      <div class="card">
+        <h3>Segments</h3>
+        <div class="seg-rows" id="rs-rows"></div>
+        <div class="row">
+          <button class="btn sm ghost" id="rs-add">+ segment</button>
+          <button class="btn sm ghost" data-preset="order">preset: in order</button>
+          <button class="btn sm ghost" data-preset="ooo">preset: out of order + dup</button>
+          <button class="btn sm ghost" data-preset="gap">preset: gap</button>
+          <button class="btn primary" id="rs-run" style="margin-left:auto">Reassemble</button>
+        </div>
+      </div>
+      <div id="rs-result"></div>
+      <div class="out" id="rs-out"></div>
+    </section>
+
+    <!-- ================= HASHES ================= -->
+    <section class="view" id="v-hash">
+      <p class="lead">Prism's self-contained MD5 (JA3) and SHA-256 (JA4).</p>
+      <div class="card">
+        <div class="row">
+          <div class="field grow"><label>text</label><input id="h-text" placeholder="abc"></div>
+          <button class="btn primary" id="h-md5">MD5</button>
+          <button class="btn primary" id="h-sha">SHA-256</button>
+        </div>
+        <div class="out" id="h-out"></div>
+      </div>
+    </section>
+
+    <!-- ================= LIVE ================= -->
+    <section class="view" id="v-live">
+      <p class="lead">Start a capture that serves Prometheus <code>/metrics</code>, then watch the
+      numbers move. Loop a pcap for a quick demo, or capture from an interface
+      (needs root — tick “sudo -n”, or run the server with privileges).</p>
+      <div class="card">
+        <h3>Source</h3>
+        <div class="row">
+          <div class="field"><label>engine</label><select id="lv-engine"><option>prism</option><option>prism-classic</option></select></div>
+          <div class="field"><label>interface</label><select id="lv-iface"><option value="">— (loop a pcap)</option></select></div>
+          <div class="field grow"><label>or loop this pcap</label><select id="lv-pcap"></select></div>
+          <div class="field"><label>metrics port</label><input id="lv-port" type="number" value="9109" style="width:100px"></div>
+          <div class="field"><label>&nbsp;</label><label class="muted"><input type="checkbox" id="lv-sudo"> sudo -n</label></div>
+        </div>
+        <div class="row" style="margin-top:12px">
+          <button class="btn primary" id="lv-start">Start</button>
+          <button class="btn" id="lv-stop" disabled>Stop</button>
+          <span id="lv-state" class="muted"></span>
+          <a class="btn ghost sm" href="#" id="lv-graf" target="_blank" style="margin-left:auto">Grafana stack →</a>
+        </div>
+      </div>
+      <div class="cards" id="lv-gauges"></div>
+      <div class="split">
+        <div class="card"><h3>Packets by application</h3><table id="lv-apps"><tbody></tbody></table></div>
+        <div class="card"><h3>Flows by signature label</h3><table id="lv-labels"><tbody></tbody></table></div>
+      </div>
+      <div class="card"><h3>JA4 fingerprints</h3><table id="lv-ja4"><tbody></tbody></table></div>
+      <details class="card"><summary class="muted">raw /metrics</summary><div class="out" id="lv-raw"></div></details>
+      <details class="card"><summary class="muted">capture log (JSON lines)</summary><div class="out" id="lv-log"></div></details>
+    </section>
+
+    <!-- ================= BUILD ================= -->
+    <section class="view" id="v-build">
+      <p class="lead">Configure &amp; build the project, and run the doctest suite.</p>
+      <div class="card">
+        <div class="row">
+          <button class="btn primary" id="b-build">cmake --build build</button>
+          <button class="btn" id="b-test">ctest</button>
+          <button class="btn ghost" id="b-list">list test cases</button>
+        </div>
+        <div class="out" id="b-out"></div>
+      </div>
+      <div class="card">
+        <h3>Sanitizers &amp; fuzzers</h3>
+        <p class="muted">Run from a shell (they need a dedicated build dir):</p>
+        <div class="out d">cmake -S . -B build-asan -DCMAKE_CXX_COMPILER=clang++ -DPRISM_SANITIZE=address,undefined
+cmake --build build-asan -j && ctest --test-dir build-asan --output-on-failure
+
+cmake -S . -B build-fuzz -DPRISM_BUILD_FUZZERS=ON -DPRISM_BUILD_TESTS=OFF -DPRISM_SANITIZE=address,undefined
+cmake --build build-fuzz -j && python3 fuzz/seed_corpus.py
+./build-fuzz/bin/fuzz_tls_fingerprint -max_total_time=60 fuzz/corpus/tls_fingerprint</div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const esc = s => (s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+async function api(path, body){
+  const isGet = path.startsWith('/api/proxy_metrics') || path.startsWith('/api/download');
+  const opt = isGet ? {} : {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})};
+  const r = await fetch(path, opt);
+  return r.headers.get('content-type')?.includes('json') ? r.json() : r.text();
+}
+function outRun(pane, res){
+  const p = $(pane); p.innerHTML='';
+  if (res.cmd) p.innerHTML += `<span class="d">$ ${esc(res.cmd)}</span>\n`;
+  if (res.stdout) p.innerHTML += esc(res.stdout);
+  if (res.stderr) p.innerHTML += `<span class="e">${esc(res.stderr)}</span>`;
+  if (res.exit!==undefined && res.exit!==0) p.innerHTML += `\n<span class="e">[exit ${res.exit}]</span>`;
+  if (res.ms!==undefined) p.innerHTML += `\n<span class="d">(${res.ms} ms)</span>`;
+}
+function busy(btn, on){ btn.disabled=on; btn.dataset.t=btn.dataset.t||btn.textContent;
+  btn.innerHTML = on ? '<i class="spin"></i> running' : btn.dataset.t; }
+
+/* ---- nav ---- */
+$$('#nav a').forEach(a=>a.onclick=()=>{
+  $$('#nav a').forEach(x=>x.classList.toggle('on',x===a));
+  $$('.view').forEach(v=>v.classList.toggle('on', v.id==='v-'+a.dataset.v));
+  $('#vtitle').textContent = a.textContent.trim();
+});
+
+/* ---- status ---- */
+async function loadStatus(){
+  const s = await api('/api/status');
+  $('#gitrev').textContent = s.git ? 'rev '+s.git : '(not a git repo)';
+  const bp=$('#buildpill');
+  bp.className='pill '+(s.build_ok?'ok':'bad');
+  bp.textContent = 'build: '+(s.build_ok?'ready':'missing — use Build tab');
+  $('#binstat').textContent = Object.entries(s.binaries).map(([k,v])=>`${k}${v?'✓':'✗'}`).join('  ');
+  if (s.test_cases){ const t=$('#testpill'); t.style.display=''; t.textContent=s.test_cases; }
+  const cards=[
+    ['Build', s.build_ok?'ready':'missing', s.build_ok?'ok':'bad'],
+    ['Engines', Object.values(s.binaries).filter(Boolean).length+' / 4', ''],
+    ['Tests', (s.test_cases||'—').replace(/.*?(\d+).*/,'$1 cases'), ''],
+    ['Git', s.git||'—', ''],
+  ];
+  $('#statcards').innerHTML = cards.map(([k,v,c])=>`<div class="stat"><div class="k">${k}</div><div class="v ${c}">${esc(v)}</div></div>`).join('');
+}
+
+/* ---- pcap pickers ---- */
+async function loadPcaps(){
+  const {pcaps} = await api('/api/pcaps');
+  const opts = pcaps.map(p=>`<option value="${esc(p.name)}">${esc(p.name)} — ${(p.bytes/1024).toFixed(1)} KB (${p.where})</option>`).join('');
+  ['#an-pcap','#ex-pcap','#lv-pcap'].forEach(id=>{ const el=$(id); if(el) el.innerHTML=opts||'<option>no .pcap files found</option>'; });
+}
+async function uploadPcap(file, then){
+  const buf = new Uint8Array(await file.arrayBuffer());
+  const hex = [...buf].map(b=>b.toString(16).padStart(2,'0')).join('');
+  await api('/api/upload', {name:file.name, hex});
+  await loadPcaps(); then&&then();
+}
+$('#an-up').onchange = e => e.target.files[0] && uploadPcap(e.target.files[0], ()=>{ $('#an-pcap').value = e.target.files[0].name.endsWith('.pcap')?e.target.files[0].name:e.target.files[0].name+'.pcap'; });
+
+/* ---- ANALYZE ---- */
+function setField(id, on){ const el=$(id); el.disabled=!on; el.parentElement.style.opacity=on?1:.4; }
+function anEngineChanged(){
+  const e = $('#an-engine').value;
+  const notDump = e !== 'prism-dump';
+  const mt = e === 'prism' || e === 'prism-classic';
+  ['#an-bapp','#an-bdom','#an-bip','#an-sig'].forEach(id=>setField(id, notDump));
+  ['#an-lbs','#an-fps'].forEach(id=>setField(id, mt));
+  setField('#an-count', mt || e === 'prism-dump');
+}
+$('#an-engine').onchange = anEngineChanged; anEngineChanged();
+$('#an-run').onclick = async () => {
+  const b=$('#an-run'); busy(b,true);
+  const engine = $('#an-engine').value;
+  const args=[];
+  const add=(f,v)=>{ if(v) args.push(f, v); };
+  if (engine === 'prism-dump') {
+    if ($('#an-count').value.trim()) args.push($('#an-count').value.trim());  // <pcap> [max_packets]
+  } else {
+    add('--block-app',$('#an-bapp').value.trim());
+    add('--block-domain',$('#an-bdom').value.trim());
+    add('--block-ip',$('#an-bip').value.trim());
+    if (engine === 'prism' || engine === 'prism-classic') {   // MT-only knobs
+      add('--lbs',$('#an-lbs').value.trim());
+      add('--fps',$('#an-fps').value.trim());
+      add('--count',$('#an-count').value.trim());
+    }
+  }
+  const res = await api('/api/run', {kind:'engine', engine,
+    pcap:$('#an-pcap').value, args,
+    signatures:(engine!=='prism-dump' && $('#an-sig').value.trim())||undefined});
+  busy(b,false);
+  outRun('#an-out', res);
+  renderAnalyze(res);
+};
+function renderAnalyze(res){
+  const s=$('#an-summary'); s.innerHTML='';
+  $('#an-dl').innerHTML = res.output_pcap
+    ? `<a class="btn ghost sm" href="/api/download?f=${encodeURIComponent(res.output_pcap)}" download>download output pcap (${(res.output_bytes/1024).toFixed(1)} KB)</a>` : '';
+  const txt = res.stdout||'';
+  const apps=[...txt.matchAll(/^[║|]\s*([A-Za-z0-9/ +.-]+?)\s{2,}(\d+)\s+([\d.]+)%/gm)]
+    .map(m=>({app:m[1].trim(), n:+m[2], pct:+m[3]})).filter(a=>a.n>0);
+  const snis=[...txt.matchAll(/- (\S+) -> (\S+)/g)].map(m=>({h:m[1],a:m[2]}));
+  const ja=[...txt.matchAll(/(JA[34])\s+(\S+)\s+x(\d+)/g)].map(m=>({k:m[1],v:m[2],n:+m[3]}));
+  const labelBlock = (txt.match(/\[Signature Labels\]([\s\S]*?)(?:\n\n|\n\[|$)/)||[])[1]||'';
+  const labels=[...labelBlock.matchAll(/\n\s+(.+?)\s+x(\d+)/g)].map(m=>({l:m[1],n:+m[2]}));
+  if(apps.length){
+    const max=Math.max(...apps.map(a=>a.n));
+    s.innerHTML += `<div class="card"><h3>Application breakdown</h3><table><tbody>`+
+      apps.map(a=>`<tr><td>${esc(a.app)}</td><td class="num">${a.n}</td><td style="width:45%"><div class="bar" style="width:${Math.max(2,a.n/max*100)}%"></div></td><td class="num">${a.pct}%</td></tr>`).join('')+`</tbody></table></div>`;
+  }
+  if(snis.length||ja.length||labels.length){
+    s.innerHTML += `<div class="split">`+
+      (snis.length?`<div class="card"><h3>Detected SNIs / hosts</h3><table><tbody>`+snis.map(x=>`<tr><td>${esc(x.h)}</td><td>${esc(x.a)}</td></tr>`).join('')+`</tbody></table></div>`:'')+
+      ((ja.length||labels.length)?`<div class="card"><h3>Fingerprints &amp; labels</h3><table><tbody>`+
+        labels.map(x=>`<tr><td>label</td><td class="vv" style="font-family:var(--mono)">${esc(x.l)}</td><td class="num">${x.n}</td></tr>`).join('')+
+        ja.map(x=>`<tr><td>${x.k}</td><td style="font-family:var(--mono);word-break:break-all">${esc(x.v)}</td><td class="num">${x.n}</td></tr>`).join('')+`</tbody></table></div>`:'')+
+      `</div>`;
+  }
+}
+
+/* ---- EXPLAIN ---- */
+function blockArgs(p){
+  const a=[]; const g=id=>$(id).value.trim();
+  if(g(p+'bapp')) a.push('--block-app',g(p+'bapp'));
+  if(g(p+'bdom')) a.push('--block-domain',g(p+'bdom'));
+  if(g(p+'bip')) a.push('--block-ip',g(p+'bip'));
+  if($(p+'bport') && $(p+'bport').value) a.push('--block-port',$(p+'bport').value);
+  return a;
+}
+$('#ex-scan').onclick = async () => {
+  const res = await api('/api/run',{kind:'tool',tool:'explain',pcap:$('#ex-pcap').value,args:['--json']});
+  try{
+    const flows=JSON.parse(res.stdout);
+    $('#ex-flows').innerHTML = flows.map(f=>`<option value="${f.src.split(':')[0]}:${f.src.split(':')[1]}-${f.dst}">`).join('')
+      + flows.map(f=>`<option value="${f.dst}">`).join('');
+    $('#ex-out').innerHTML = `<span class="d">${flows.length} flow(s): `+flows.map(f=>esc(f.dst+' '+f.app)).join(', ')+`</span>`;
+  }catch(e){ outRun('#ex-out',res); }
+};
+$('#ex-run').onclick = async () => {
+  const b=$('#ex-run'); busy(b,true);
+  const args=[$('#ex-flow').value.trim()].filter(Boolean).concat($('#ex-raw').checked?['--json']:[]).concat(blockArgs('#ex-'));
+  const res = await api('/api/run',{kind:'tool',tool:'explain',pcap:$('#ex-pcap').value,args});
+  busy(b,false);
+  $('#ex-result').innerHTML='';
+  if($('#ex-raw').checked){ outRun('#ex-out',res); return; }
+  $('#ex-out').innerHTML='';
+  if(!res.ok && res.stderr){ outRun('#ex-out',res); return; }
+  // parse the text traces into flow cards
+  const blocks = res.stdout.split(/\n(?=flow  )/).filter(x=>x.trim().startsWith('flow'));
+  if(!blocks.length){ outRun('#ex-out',res); return; }
+  $('#ex-result').innerHTML = blocks.map(renderFlowText).join('');
+  $$('#ex-result .fh').forEach(h=>h.onclick=()=>h.parentElement.classList.toggle('open'));
+};
+function renderFlowText(t){
+  const line = s => (t.match(new RegExp('^\\s*'+s+'.*$','m'))||[''])[0].trim();
+  const head = line('flow ').replace(/^flow\s+/,'');
+  const drop = /verdict:\s*DROP/.test(t);
+  const cls = (t.match(/classification:\s*(.+)/)||[])[1]||'?';
+  const why = (t.match(/because:\s*(.+)/)||[])[1]||'';
+  const tl = (t.match(/timeline:\n([\s\S]*)/)||[])[1]||'';
+  const head2 = t.split(/\n\s*timeline:/)[0];
+  const kv = [...head2.matchAll(/^\s{2,}(sni|ja3|ja4|http Host:|dns query:|tcp:|first flight:|tls:)\s+(\S.*)$/gm)]
+    .map(m=>`<div class="kk">${esc(m[1].replace(':',''))}</div><div class="vv">${esc(m[2])}</div>`).join('');
+  return `<div class="flow"><div class="fh">
+      <span class="badge ${drop?'d':'f'}">${drop?'DROP':'FORWARD'}</span>
+      <span class="t">${esc(head)}</span>
+      <span class="muted" style="margin-left:auto">${esc(cls)}</span></div>
+    <div class="fb">
+      <div class="kv">${kv}<div class="kk">verdict</div><div class="vv">${drop?'DROP':'FORWARD'}</div>
+      <div class="kk">reason</div><div class="vv">${esc(why)}</div></div>
+      ${tl?`<div class="tl">${tl.split('\n').map(l=>`<div>${esc(l.trim())}</div>`).join('')}</div>`:''}
+    </div></div>`;
+}
+
+/* ---- SIGNATURES ---- */
+async function sigTest(kind, val){
+  const res = await api('/api/run',{kind:'tool',tool:'sig',
+    args:['--json',kind,val], signatures:$('#sg-rules').value.trim()||undefined});
+  const p=$('#sg-out');
+  try{
+    const j=JSON.parse(res.stdout);
+    p.innerHTML = `<span class="d">${j.rules_loaded} rule(s) loaded</span>\n`+
+      (j.match ? `<span class="g">${esc(kind)} "${esc(val)}"  →  ${esc(j.match.app)}</span>\n  rule: ${esc(j.match.rule)}`
+               : `${esc(kind)} "${esc(val)}"  →  <span class="e">no match</span>`);
+  }catch(e){ outRun('#sg-out',res); }
+}
+$('#sg-test').onclick = () => sigTest($('#sg-kind').value, $('#sg-val').value.trim());
+$$('#v-signatures .tag').forEach(t=>t.onclick=()=>{ $('#sg-kind').value=t.dataset.k; $('#sg-val').value=t.dataset.v; sigTest(t.dataset.k,t.dataset.v); });
+
+/* ---- FINGERPRINTS ---- */
+// a real TLS 1.3 ClientHello for www.google.com (record starts at content-type 0x16)
+const SAMPLE_HELLO = "160301004f0100004b030384e467383d914eb078252f157bbb84976438e53c"
+  +"d657ea4de503ccf9879c68b7000004130113020100001e00000013001100000e"
+  +"7777772e676f6f676c652e636f6d002b0003020304";
+$('#fp-sample').onclick = () => $('#fp-hex').value = SAMPLE_HELLO;
+$('#fp-run').onclick = async () => {
+  const hex = $('#fp-hex').value.trim();
+  if(!hex){ $('#fp-out').textContent='paste ClientHello hex first'; return; }
+  // stash hex to a temp file via the reasm-style stdin path: fp reads a file, so send via /api/run stdin? fp needs a path.
+  const res = await api('/api/run',{kind:'tool',tool:'fp',args:['--json',...($('#fp-quic').checked?['--quic']:[]),'-'],stdin:hex});
+  $('#fp-result').innerHTML='';
+  try{
+    const j=JSON.parse(res.stdout);
+    if(!j.ok){ $('#fp-out').innerHTML=`<span class="e">${esc(j.error||'parse failed')}</span>`; return; }
+    $('#fp-out').innerHTML='';
+    const ver=v=>({0x304:'TLS 1.3',0x303:'TLS 1.2',0x302:'TLS 1.1',0x301:'TLS 1.0'}[v]||('0x'+v.toString(16)));
+    $('#fp-result').innerHTML = `<div class="card"><h3>Parsed</h3><div class="kv">
+      <div class="kk">bytes</div><div class="vv">${j.bytes}</div>
+      <div class="kk">version</div><div class="vv">${ver(j.negotiated_version)} <span class="muted">(legacy ${ver(j.legacy_version)})</span></div>
+      <div class="kk">SNI</div><div class="vv">${j.has_sni?esc(j.sni):'<span class="muted">none</span>'}</div>
+      <div class="kk">ciphers</div><div class="vv">${j.ciphers.length} — ${j.ciphers.map(c=>'0x'+c.toString(16)).join(' ')}</div>
+      <div class="kk">extensions</div><div class="vv">${j.extensions.join(', ')}</div>
+      <div class="kk">groups</div><div class="vv">${j.groups.join(', ')||'—'}</div>
+      <div class="kk">ALPN</div><div class="vv">${j.alpn.join(', ')||'—'}</div>
+    </div></div>
+    <div class="card"><h3>Fingerprints</h3><div class="kv">
+      <div class="kk">JA3 string</div><div class="vv">${esc(j.ja3_string)}</div>
+      <div class="kk">JA3</div><div class="vv">${j.ja3}</div>
+      <div class="kk">JA4</div><div class="vv">${j.ja4}</div>
+    </div></div>`;
+  }catch(e){ outRun('#fp-out',res); }
+};
+
+/* ---- REASSEMBLER ---- */
+function segRow(seq,syn,txt){
+  const d=document.createElement('div'); d.className='sr';
+  d.innerHTML = `<input type="number" value="${seq}" style="width:110px" title="sequence">
+    <label class="muted"><input type="checkbox" ${syn?'checked':''}> SYN</label>
+    <input type="text" value="${txt||''}" placeholder="payload text">
+    <button class="btn sm ghost">✕</button>`;
+  d.querySelector('button').onclick=()=>d.remove();
+  $('#rs-rows').append(d);
+}
+$('#rs-add').onclick = () => segRow(1000, false, '');
+$$('#v-reasm [data-preset]').forEach(b=>b.onclick=()=>{
+  $('#rs-rows').innerHTML='';
+  if(b.dataset.preset==='order'){ segRow(999,true,''); segRow(1000,false,'hello '); segRow(1006,false,'world'); }
+  if(b.dataset.preset==='ooo'){ segRow(999,true,''); segRow(1006,false,'world'); segRow(1000,false,'hello '); segRow(1000,false,'hello '); }
+  if(b.dataset.preset==='gap'){ segRow(999,true,''); segRow(1000,false,'abc'); segRow(1010,false,'xyz'); }
+});
+$('#rs-run').onclick = async () => {
+  const script = $$('#rs-rows .sr').map(r=>{
+    const seq=r.children[0].value, syn=r.querySelector('input[type=checkbox]').checked?1:0;
+    const hex=[...r.children[2].value].map(c=>c.charCodeAt(0).toString(16).padStart(2,'0')).join('');
+    return `${seq} ${syn} ${hex}`;
+  }).join('\n');
+  const res = await api('/api/run',{kind:'tool',tool:'reasm',args:['--json','-'],stdin:script});
+  $('#rs-result').innerHTML='';
+  try{
+    const j=JSON.parse(res.stdout);
+    $('#rs-out').innerHTML='';
+    $('#rs-result').innerHTML = `<div class="card"><h3>Result</h3><div class="kv">
+      <div class="kk">segments applied</div><div class="vv">${j.segments_applied}</div>
+      <div class="kk">contiguous bytes</div><div class="vv">${j.contiguous_bytes}</div>
+      <div class="kk">buffer full</div><div class="vv">${j.full?'yes (hit cap)':'no'}</div>
+      <div class="kk">reassembled</div><div class="vv">"${esc(j.ascii)}"</div>
+      <div class="kk">hex</div><div class="vv">${j.hex||'—'}</div>
+    </div></div>`;
+  }catch(e){ outRun('#rs-out',res); }
+};
+
+/* ---- HASHES ---- */
+async function doHash(alg){
+  const res = await api('/api/run',{kind:'tool',tool:'hash',args:[alg,$('#h-text').value]});
+  $('#h-out').innerHTML = `<span class="d">${alg}("${esc($('#h-text').value)}")</span>\n<span class="g">${esc((res.stdout||'').trim())}</span>`+
+    (res.stderr?`<span class="e">${esc(res.stderr)}</span>`:'');
+}
+$('#h-md5').onclick = () => doHash('md5');
+$('#h-sha').onclick = () => doHash('sha256');
+
+/* ---- LIVE ---- */
+let livePoll=null, lastPkts=null, lastT=null;
+async function loadIfaces(){ const {ifaces}=await api('/api/ifaces'); $('#lv-iface').innerHTML='<option value="">— (loop a pcap)</option>'+ifaces.map(i=>`<option>${i}</option>`).join(''); }
+$('#lv-graf').href = 'http://localhost:3000';
+function parseMetrics(txt){
+  const m={scalars:{},apps:[],ja4:[],labels:[]};
+  txt.split('\n').forEach(l=>{
+    if(l.startsWith('#')||!l.trim())return;
+    let mm=l.match(/^prism_\w+\{app="([^"]+)"\}\s+(\d+)/); if(mm){ m.apps.push([mm[1],+mm[2]]); return; }
+    mm=l.match(/^prism_signature_label_flows\{label="([^"]+)"\}\s+(\d+)/); if(mm){ m.labels.push([mm[1],+mm[2]]); return; }
+    mm=l.match(/^prism_ja4_flows\{ja4="([^"]+)"\}\s+(\d+)/); if(mm){ m.ja4.push([mm[1],+mm[2]]); return; }
+    mm=l.match(/^(prism_\w+)\s+(\d+)/); if(mm) m.scalars[mm[1]]=+mm[2];
+  });
+  return m;
+}
+async function pollMetrics(port){
+  const r = await api('/api/proxy_metrics?port='+port);
+  if(!r.ok){ $('#lv-raw').innerHTML=`<span class="e">${esc(r.error)}</span>`; return; }
+  $('#lv-raw').textContent = r.text;
+  const m = parseMetrics(r.text);
+  const now=Date.now(), pk=m.scalars.prism_packets_total||0;
+  let pps=0; if(lastPkts!=null && lastT) pps=Math.max(0,(pk-lastPkts)/((now-lastT)/1000));
+  lastPkts=pk; lastT=now;
+  const g=[
+    ['packets/s', pps.toFixed(0)],
+    ['packets', pk],
+    ['bytes', ((m.scalars.prism_bytes_total||0)/1e6).toFixed(2)+' MB'],
+    ['forwarded', m.scalars.prism_forwarded_total||0],
+    ['dropped', m.scalars.prism_dropped_total||0],
+    ['queue', m.scalars.prism_queue_depth ?? '—'],
+    ['active conns', m.scalars.prism_active_connections ?? '—'],
+  ];
+  $('#lv-gauges').innerHTML = g.map(([k,v])=>`<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
+  const amax=Math.max(1,...m.apps.map(a=>a[1]));
+  $('#lv-apps tbody').innerHTML = m.apps.sort((a,b)=>b[1]-a[1]).slice(0,15)
+    .map(([a,n])=>`<tr><td>${esc(a)}</td><td style="width:55%"><div class="bar" style="width:${n/amax*100}%"></div></td><td class="num">${n}</td></tr>`).join('') || '<tr><td class="muted">no data yet</td></tr>';
+  const lmax=Math.max(1,...m.labels.map(a=>a[1]));
+  $('#lv-labels tbody').innerHTML = m.labels.sort((a,b)=>b[1]-a[1]).slice(0,15)
+    .map(([a,n])=>`<tr><td>${esc(a)}</td><td style="width:55%"><div class="bar" style="width:${n/lmax*100}%"></div></td><td class="num">${n}</td></tr>`).join('') || '<tr><td class="muted">no data yet</td></tr>';
+  $('#lv-ja4 tbody').innerHTML = m.ja4.sort((a,b)=>b[1]-a[1]).slice(0,15)
+    .map(([j,n])=>`<tr><td style="font-family:var(--mono);font-size:11px">${esc(j)}</td><td class="num">${n}</td></tr>`).join('') || '<tr><td class="muted">no data yet</td></tr>';
+}
+async function liveStatus(){
+  const s = await api('/api/capture/status');
+  $('#lv-state').textContent = s.running ? 'running: '+s.cmd : (s.exit!=null?('exited '+s.exit):'stopped');
+  $('#lv-start').disabled = s.running; $('#lv-stop').disabled = !s.running;
+  if(s.log) $('#lv-log').textContent = s.log;
+  return s;
+}
+$('#lv-start').onclick = async () => {
+  const b=$('#lv-start'); busy(b,true);
+  const port=+$('#lv-port').value||9109;
+  const r = await api('/api/capture/start',{
+    engine:$('#lv-engine').value, iface:$('#lv-iface').value,
+    pcap:$('#lv-iface').value?undefined:$('#lv-pcap').value,
+    metrics_port:port, sudo:$('#lv-sudo').checked});
+  busy(b,false);
+  if(r.error){ $('#lv-state').innerHTML=`<span class="e">${esc(r.error)}</span>`; }
+  lastPkts=null;lastT=null;
+  clearInterval(livePoll);
+  livePoll=setInterval(()=>{ pollMetrics(port); liveStatus(); }, 2000);
+  liveStatus(); setTimeout(()=>pollMetrics(port),700);
+};
+$('#lv-stop').onclick = async () => { await api('/api/capture/stop'); clearInterval(livePoll); liveStatus(); };
+
+/* ---- BUILD ---- */
+$('#b-build').onclick = async ()=>{ const b=$('#b-build'); busy(b,true); outRun('#b-out', await api('/api/build')); busy(b,false); loadStatus(); };
+$('#b-test').onclick  = async ()=>{ const b=$('#b-test');  busy(b,true); outRun('#b-out', await api('/api/tests',{which:'ctest'})); busy(b,false); };
+$('#b-list').onclick  = async ()=>{ outRun('#b-out', await api('/api/tests',{which:'list'})); };
+
+/* ---- boot ---- */
+loadStatus(); loadPcaps(); loadIfaces(); liveStatus();
+$$('.view [id$=up]').forEach(i=>i.type==='file'&&(i.onchange=e=>e.target.files[0]&&uploadPcap(e.target.files[0])));
+</script>
+</body>
+</html>
