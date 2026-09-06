@@ -4,6 +4,8 @@
 // =============================================================================
 
 #include "rule_manager.h"
+
+#include "log.h"
 #include <sstream>
 #include <iostream>
 #include <algorithm>
@@ -46,7 +48,7 @@ std::string RuleManager::ipToString(uint32_t ip) {
 void RuleManager::blockIP(uint32_t ip) {
     std::unique_lock<std::shared_mutex> lock(ip_mutex_);
     blocked_ips_.insert(ip);
-    std::cout << "[RuleManager] Blocked IP: " << ipToString(ip) << std::endl;
+    PLOG_INFO("rules") << "blocked IP " << ipToString(ip);
 }
 
 void RuleManager::blockIP(const std::string& ip) {
@@ -56,7 +58,7 @@ void RuleManager::blockIP(const std::string& ip) {
 void RuleManager::unblockIP(uint32_t ip) {
     std::unique_lock<std::shared_mutex> lock(ip_mutex_);
     blocked_ips_.erase(ip);
-    std::cout << "[RuleManager] Unblocked IP: " << ipToString(ip) << std::endl;
+    PLOG_INFO("rules") << "unblocked IP " << ipToString(ip);
 }
 
 void RuleManager::unblockIP(const std::string& ip) {
@@ -84,13 +86,13 @@ std::vector<std::string> RuleManager::getBlockedIPs() const {
 void RuleManager::blockApp(AppType app) {
     std::unique_lock<std::shared_mutex> lock(app_mutex_);
     blocked_apps_.insert(app);
-    std::cout << "[RuleManager] Blocked app: " << appTypeToString(app) << std::endl;
+    PLOG_INFO("rules") << "blocked app " << appTypeToString(app);
 }
 
 void RuleManager::unblockApp(AppType app) {
     std::unique_lock<std::shared_mutex> lock(app_mutex_);
     blocked_apps_.erase(app);
-    std::cout << "[RuleManager] Unblocked app: " << appTypeToString(app) << std::endl;
+    PLOG_INFO("rules") << "unblocked app " << appTypeToString(app);
 }
 
 bool RuleManager::isAppBlocked(AppType app) const {
@@ -116,7 +118,7 @@ void RuleManager::blockDomain(const std::string& domain) {
         blocked_domains_.insert(domain);
     }
     
-    std::cout << "[RuleManager] Blocked domain: " << domain << std::endl;
+    PLOG_INFO("rules") << "blocked domain " << domain;
 }
 
 void RuleManager::unblockDomain(const std::string& domain) {
@@ -131,7 +133,7 @@ void RuleManager::unblockDomain(const std::string& domain) {
         blocked_domains_.erase(domain);
     }
     
-    std::cout << "[RuleManager] Unblocked domain: " << domain << std::endl;
+    PLOG_INFO("rules") << "unblocked domain " << domain;
 }
 
 bool RuleManager::domainMatchesPattern(const std::string& domain, const std::string& pattern) {
@@ -194,7 +196,7 @@ std::vector<std::string> RuleManager::getBlockedDomains() const {
 void RuleManager::blockPort(uint16_t port) {
     std::unique_lock<std::shared_mutex> lock(port_mutex_);
     blocked_ports_.insert(port);
-    std::cout << "[RuleManager] Blocked port: " << port << std::endl;
+    PLOG_INFO("rules") << "blocked port " << port;
 }
 
 void RuleManager::unblockPort(uint16_t port) {
@@ -278,7 +280,7 @@ bool RuleManager::saveRules(const std::string& filename) const {
     }
     
     file.close();
-    std::cout << "[RuleManager] Rules saved to: " << filename << std::endl;
+    PLOG_INFO("rules") << "rules saved to " << filename;
     return true;
 }
 
@@ -320,7 +322,7 @@ bool RuleManager::loadRules(const std::string& filename) {
     }
     
     file.close();
-    std::cout << "[RuleManager] Rules loaded from: " << filename << std::endl;
+    PLOG_INFO("rules") << "rules loaded from " << filename;
     return true;
 }
 
@@ -342,7 +344,7 @@ void RuleManager::clearAll() {
         std::unique_lock<std::shared_mutex> lock(port_mutex_);
         blocked_ports_.clear();
     }
-    std::cout << "[RuleManager] All rules cleared" << std::endl;
+    PLOG_INFO("rules") << "all rules cleared";
 }
 
 RuleManager::RuleStats RuleManager::getStats() const {

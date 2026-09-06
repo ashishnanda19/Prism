@@ -16,7 +16,8 @@ namespace PacketAnalyzer {
 namespace {
 bool wantsValue(const std::string& a) {
     return a == "-i" || a == "--iface" || a == "-o" || a == "--output" || a == "-w" ||
-           a == "-c" || a == "--count" || a == "--snaplen" || a == "--signatures";
+           a == "-c" || a == "--count" || a == "--snaplen" || a == "--signatures" ||
+           a == "--metrics" || a == "--log-level";
 }
 }  // namespace
 
@@ -62,6 +63,16 @@ bool parseRunOptions(int argc, char** argv, RunOptions& out, std::string& err) {
         } else if (a == "--signatures") {
             out.signatures = val;
             ++i;
+        } else if (a == "--metrics") {
+            out.metrics_bind = val;
+            ++i;
+        } else if (a == "--log-level") {
+            out.log_level = val;
+            ++i;
+        } else if (a == "--log-json") {
+            out.log_json = true;
+        } else if (a == "--loop") {
+            out.loop = true;
         } else if (a == "--promisc") {
             out.promiscuous = true;
         } else if (a == "--no-promisc") {
@@ -90,7 +101,35 @@ std::string captureHelp() {
         "      --snaplen <n>     bytes captured per frame, live (default: 262144)\n"
         "      --promisc / --no-promisc   promiscuous mode, live (default: on)\n"
         "      --signatures <f>  load app signatures from <f> (replaces the built-ins)\n"
+        "      --metrics <a>    serve Prometheus /metrics on <a> (host:port | port)\n"
+        "      --log-level <l>  trace|debug|info|warn|error|off (default: info)\n"
+        "      --loop           file mode: replay from the top at EOF\n"
+        "      --log-json       emit logs as JSON lines\n"
         "  -h, --help\n";
+}
+
+bool metricsEndpoint(const RunOptions& opt, std::string& host, uint16_t& port,
+                     std::string& err) {
+    if (opt.metrics_bind.empty()) return false;
+    const std::string& spec = opt.metrics_bind;
+    std::string h = "127.0.0.1";
+    std::string p;
+    auto colon = spec.rfind(':');
+    if (colon == std::string::npos) {
+        p = spec;  // bare port
+    } else {
+        if (colon > 0) h = spec.substr(0, colon);
+        p = spec.substr(colon + 1);
+    }
+    char* endp = nullptr;
+    long pn = std::strtol(p.c_str(), &endp, 10);
+    if (endp == p.c_str() || *endp != '\0' || pn < 0 || pn > 65535) {
+        err = "bad --metrics endpoint '" + opt.metrics_bind + "' (want host:port or port)";
+        return false;
+    }
+    host = h;
+    port = static_cast<uint16_t>(pn);
+    return true;
 }
 
 std::unique_ptr<PacketSource> openSource(const RunOptions& opt, std::string& err) {
@@ -112,6 +151,7 @@ std::unique_ptr<PacketSource> openSource(const RunOptions& opt, std::string& err
         return nullptr;
     }
     auto reader = std::make_unique<PcapReader>();
+    reader->setLoop(opt.loop);
     if (!reader->open(opt.pcap_in)) {
         err = "cannot open pcap file: " + opt.pcap_in;
         return nullptr;

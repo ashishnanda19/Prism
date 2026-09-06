@@ -83,6 +83,9 @@ add_library(prism_core STATIC
     src/live_source.cpp
     src/capture_cli.cpp
     src/hashes.cpp
+    src/http_server.cpp
+    src/log.cpp
+    src/metrics.cpp
     src/sni_extractor.cpp
     src/signature_set.cpp
     src/tcp_reassembler.cpp

@@ -5,11 +5,12 @@
 
 #include "fast_path.h"
 
+#include "log.h"
+
 #include "signature_set.h"
 #include "tls_fingerprint.h"
 
 #include <algorithm>
-#include <iostream>
 #include <sstream>
 #include <iomanip>
 
@@ -39,7 +40,7 @@ void FastPathProcessor::start() {
     running_ = true;
     thread_ = std::thread(&FastPathProcessor::run, this);
     
-    std::cout << "[FP" << fp_id_ << "] Started\n";
+    PLOG_DEBUG("fp") << "FP" << fp_id_ << " started";
 }
 
 void FastPathProcessor::stop() {
@@ -52,8 +53,7 @@ void FastPathProcessor::stop() {
         thread_.join();
     }
     
-    std::cout << "[FP" << fp_id_ << "] Stopped (processed " 
-              << packets_processed_ << " packets)\n";
+    PLOG_DEBUG("fp") << "FP" << fp_id_ << " stopped (" << packets_processed_ << " packets)";
 }
 
 void FastPathProcessor::run() {
@@ -269,27 +269,16 @@ PacketAction FastPathProcessor::checkRules(const PacketJob& job, Connection* con
     );
     
     if (block_reason) {
-        // Log the block
-        std::ostringstream ss;
-        ss << "[FP" << fp_id_ << "] BLOCKED packet: ";
-        
+        const char* kind = "";
         switch (block_reason->type) {
-            case RuleManager::BlockReason::Kind::Ip:
-                ss << "IP " << block_reason->detail;
-                break;
-            case RuleManager::BlockReason::Kind::App:
-                ss << "App " << block_reason->detail;
-                break;
-            case RuleManager::BlockReason::Kind::Domain:
-                ss << "Domain " << block_reason->detail;
-                break;
-            case RuleManager::BlockReason::Kind::Port:
-                ss << "Port " << block_reason->detail;
-                break;
+            case RuleManager::BlockReason::Kind::Ip: kind = "ip"; break;
+            case RuleManager::BlockReason::Kind::App: kind = "app"; break;
+            case RuleManager::BlockReason::Kind::Domain: kind = "domain"; break;
+            case RuleManager::BlockReason::Kind::Port: kind = "port"; break;
         }
-        
-        std::cout << ss.str() << std::endl;
-        
+        PLOG_INFO("block") << job.tuple.toString() << " dropped by " << kind << " rule "
+                           << block_reason->detail;
+
         // Mark connection as blocked
         conn_tracker_.blockConnection(conn);
         
@@ -357,7 +346,7 @@ FPManager::FPManager(int num_fps,
         fps_.push_back(std::move(fp));
     }
     
-    std::cout << "[FPManager] Created " << num_fps << " fast path processors\n";
+    PLOG_DEBUG("fp") << "created " << num_fps << " fast path processors";
 }
 
 FPManager::~FPManager() {

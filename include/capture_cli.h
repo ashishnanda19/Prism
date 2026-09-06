@@ -25,10 +25,14 @@ struct RunOptions {
     std::string iface;        // live mode: interface name   (needs root / CAP_NET_RAW)
     std::string pcap_out;     // where forwarded frames are written
     std::string signatures;   // optional: replace the built-in signature set
+    std::string metrics_bind; // "" = off; "host:port" | "port" | ":port" for /metrics
+    std::string log_level = "info";
+    bool log_json = false;
 
     long max_frames = -1;      // stop after N frames read (-1 = unlimited)
     int  snaplen    = 262144;  // bytes captured per frame (live)
     bool promiscuous = true;   // put the interface in promiscuous mode (live)
+    bool loop = false;        // file mode: restart at EOF (demos / load tests)
     bool help = false;
 
     std::vector<std::string> rest;  // unrecognised args, in order
@@ -47,6 +51,11 @@ bool parseRunOptions(int argc, char** argv, RunOptions& out, std::string& err);
 
 // Help text for the shared options (engines append their own).
 std::string captureHelp();
+
+// Split RunOptions::metrics_bind into host + port. Returns false when metrics
+// are disabled (empty) or the spec is malformed (fills `err`).
+bool metricsEndpoint(const RunOptions& opt, std::string& host, uint16_t& port,
+                     std::string& err);
 
 // Build the PacketSource described by `opt`. Returns nullptr and fills `err`
 // on failure (missing input, unknown interface, insufficient privileges,

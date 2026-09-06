@@ -1,0 +1,45 @@
+# =============================================================================
+# Prism observability stack: engine + Prometheus + Grafana
+#
+#   cd deploy && docker compose up --build
+#   Grafana:    http://localhost:3000   (admin / admin, dashboard "Prism")
+#   Prometheus: http://localhost:9090
+#   raw:        http://localhost:9109/metrics
+#
+# `prism` replays test_dpi.pcap on a loop so the metrics keep moving. Swap the
+# command for `--iface eth0` (and add cap_add: [NET_RAW, NET_ADMIN]) to watch
+# real traffic on the compose network.
+# =============================================================================
+services:
+  prism:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    command: >
+      /data/test_dpi.pcap --loop -o /dev/null
+      --metrics 0.0.0.0:9109 --log-json
+    ports:
+      - "9109:9109"
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on: [prism]
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on: [prometheus]

@@ -4,6 +4,10 @@
 // =============================================================================
 
 #include "dpi_engine.h"
+
+#include "log.h"
+#include "metrics.h"
+
 #include <iostream>
 #include <sstream>
 #include <iomanip>
@@ -68,7 +72,7 @@ bool DPIEngine::initialize() {
         global_conn_table_->registerTracker(i, &fp_manager_->getFP(i).getConnectionTracker());
     }
     
-    std::cout << "[DPIEngine] Initialized successfully\n";
+    PLOG_INFO("engine") << "initialized";
     return true;
 }
 
@@ -87,7 +91,7 @@ void DPIEngine::start() {
     // Start LB threads
     lb_manager_->startAll();
     
-    std::cout << "[DPIEngine] All threads started\n";
+    PLOG_INFO("engine") << "all threads started";
 }
 
 void DPIEngine::stop() {
@@ -111,7 +115,7 @@ void DPIEngine::stop() {
         output_thread_.join();
     }
     
-    std::cout << "[DPIEngine] All threads stopped\n";
+    PLOG_INFO("engine") << "all threads stopped";
 }
 
 void DPIEngine::waitForCompletion() {
@@ -131,8 +135,7 @@ bool DPIEngine::processFile(PacketAnalyzer::PacketSource& source,
                             const std::string& output_file,
                             long max_frames) {
 
-    std::cout << "\n[DPIEngine] Input: " << (source.isLive() ? "live interface" : "pcap file")
-              << "\n[DPIEngine] Output to:  " << output_file << "\n\n";
+    PLOG_INFO("engine") << "input=" << (source.isLive() ? "live" : "pcap") << " output=" << output_file;
 
     // Initialize if not already done
     if (!rule_manager_) {
@@ -144,7 +147,7 @@ bool DPIEngine::processFile(PacketAnalyzer::PacketSource& source,
     // Open output file
     output_file_.open(output_file, std::ios::binary);
     if (!output_file_.is_open()) {
-        std::cerr << "[DPIEngine] Error: Cannot open output file\n";
+        PLOG_ERROR("engine") << "cannot open output file";
         return false;
     }
 
@@ -186,8 +189,7 @@ void DPIEngine::readerThreadFunc(PacketAnalyzer::PacketSource* source, long max_
     PacketAnalyzer::ParsedPacket parsed;
     uint32_t packet_id = 0;
 
-    std::cout << (source->isLive() ? "[Reader] Capturing live... (Ctrl-C to stop)\n"
-                                   : "[Reader] Starting packet processing...\n");
+    PLOG_INFO("reader") << (source->isLive() ? "capturing live (Ctrl-C to stop)" : "processing packets");
 
     while (g_dpi_running) {
         if (max_frames >= 0 && packet_id >= static_cast<uint32_t>(max_frames)) break;
@@ -195,7 +197,7 @@ void DPIEngine::readerThreadFunc(PacketAnalyzer::PacketSource* source, long max_
         if (st == PacketSource::Status::End) break;
         if (st == PacketSource::Status::Timeout) continue;
         if (st == PacketSource::Status::Failed) {
-            std::cerr << "[Reader] " << source->errorMessage() << "\n";
+            PLOG_ERROR("reader") << source->errorMessage();
             break;
         }
 
@@ -227,9 +229,9 @@ void DPIEngine::readerThreadFunc(PacketAnalyzer::PacketSource* source, long max_
         lb.getInputQueue().push(std::move(job));
     }
     
-    std::cout << "[Reader] Finished reading " << packet_id << " packets\n";
+    PLOG_INFO("reader") << "finished reading " << packet_id << " packets";
     if (source->isLive() && source->kernelDrops() > 0) {
-        std::cout << "[Reader] Kernel dropped " << source->kernelDrops() << " frames\n";
+        PLOG_WARN("reader") << "kernel dropped " << source->kernelDrops() << " frames";
     }
     source->close();
 }
@@ -375,7 +377,7 @@ void DPIEngine::blockApp(const std::string& app_name) {
             return;
         }
     }
-    std::cerr << "[DPIEngine] Unknown app: " << app_name << "\n";
+    PLOG_WARN("engine") << "unknown app: " << app_name;
 }
 
 void DPIEngine::unblockApp(AppType app) {
@@ -484,6 +486,34 @@ std::string DPIEngine::generateClassificationReport() const {
         return fp_manager_->generateClassificationReport();
     }
     return "";
+}
+
+std::string DPIEngine::metricsText() const {
+    using namespace prism::metrics;
+    std::string o;
+    o += counter("prism_packets_total", "Frames read", (int64_t)stats_.total_packets.load());
+    o += counter("prism_bytes_total", "Bytes read", (int64_t)stats_.total_bytes.load());
+    o += counter("prism_tcp_packets_total", "TCP frames", (int64_t)stats_.tcp_packets.load());
+    o += counter("prism_udp_packets_total", "UDP frames", (int64_t)stats_.udp_packets.load());
+    o += counter("prism_forwarded_total", "Frames forwarded",
+                 (int64_t)stats_.forwarded_packets.load());
+    o += counter("prism_dropped_total", "Frames dropped by a rule",
+                 (int64_t)stats_.dropped_packets.load());
+
+    std::vector<std::pair<std::string, int64_t>> apps;
+    int64_t active = 0;
+    if (fp_manager_) {
+        std::unordered_map<AppType, int64_t> counts;
+        for (int i = 0; i < fp_manager_->getNumFPs(); ++i) {
+            fp_manager_->getFP(i).getConnectionTracker().forEach(
+                [&](const Connection& c) { counts[c.app_type]++; });
+        }
+        for (auto& [a, n] : counts) apps.emplace_back(appTypeToString(a), n);
+        active = (int64_t)fp_manager_->getAggregatedStats().total_connections;
+    }
+    o += gauge("prism_active_connections", "Connections currently tracked", active);
+    o += labeled("prism_app_connections", "Connections per detected app", "gauge", "app", apps);
+    return o;
 }
 
 const DPIStats& DPIEngine::getStats() const {

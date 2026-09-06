@@ -4,6 +4,8 @@
 // =============================================================================
 
 #include "load_balancer.h"
+
+#include "log.h"
 #include <iostream>
 #include <chrono>
 
@@ -36,8 +38,7 @@ void LoadBalancer::start() {
     running_ = true;
     thread_ = std::thread(&LoadBalancer::run, this);
     
-    std::cout << "[LB" << lb_id_ << "] Started (serving FP" 
-              << fp_start_id_ << "-FP" << (fp_start_id_ + num_fps_ - 1) << ")\n";
+    PLOG_DEBUG("lb") << "LB" << lb_id_ << " started (FP" << fp_start_id_ << "-FP" << (fp_start_id_ + num_fps_ - 1) << ")";
 }
 
 void LoadBalancer::stop() {
@@ -50,7 +51,7 @@ void LoadBalancer::stop() {
         thread_.join();
     }
     
-    std::cout << "[LB" << lb_id_ << "] Stopped\n";
+    PLOG_DEBUG("lb") << "LB" << lb_id_ << " stopped";
 }
 
 void LoadBalancer::run() {
@@ -112,8 +113,7 @@ LBManager::LBManager(int num_lbs, int fps_per_lb,
         lbs_.push_back(std::make_unique<LoadBalancer>(lb_id, lb_fp_queues, fp_start));
     }
     
-    std::cout << "[LBManager] Created " << num_lbs << " load balancers, "
-              << fps_per_lb << " FPs each\n";
+    PLOG_DEBUG("lb") << "created " << num_lbs << " load balancers, " << fps_per_lb << " FPs each";
 }
 
 LBManager::~LBManager() {

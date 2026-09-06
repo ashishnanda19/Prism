@@ -25,6 +25,9 @@
 #include <csignal>
 
 #include "capture_cli.h"
+#include "http_server.h"
+#include "log.h"
+#include "metrics.h"
 #include "pcap_reader.h"
 #include "packet_parser.h"
 #include "signature_set.h"
@@ -131,7 +134,7 @@ public:
     void blockIP(const std::string& ip) {
         std::lock_guard<std::mutex> lock(mutex_);
         blocked_ips_.insert(parseIP(ip));
-        std::cout << "[Rules] Blocked IP: " << ip << "\n";
+        PLOG_INFO("rules") << "blocked IP " << ip;
     }
     
     void blockApp(const std::string& app) {
@@ -139,17 +142,17 @@ public:
         for (int i = 0; i < static_cast<int>(AppType::APP_COUNT); i++) {
             if (appTypeToString(static_cast<AppType>(i)) == app) {
                 blocked_apps_.insert(static_cast<AppType>(i));
-                std::cout << "[Rules] Blocked app: " << app << "\n";
+                PLOG_INFO("rules") << "blocked app " << app;
                 return;
             }
         }
-        std::cerr << "[Rules] Unknown app: " << app << "\n";
+        PLOG_WARN("rules") << "unknown app: " << app;
     }
     
     void blockDomain(const std::string& domain) {
         std::lock_guard<std::mutex> lock(mutex_);
         blocked_domains_.push_back(domain);
-        std::cout << "[Rules] Blocked domain: " << domain << "\n";
+        PLOG_INFO("rules") << "blocked domain " << domain;
     }
     
     bool isBlocked(uint32_t src_ip, AppType app, const std::string& sni) const {
@@ -484,9 +487,9 @@ public:
         
         // Read and dispatch packets
         if (source.isLive()) {
-            std::cout << "[Reader] Capturing live... (Ctrl-C to stop)\n";
+            PLOG_INFO("reader") << "capturing live (Ctrl-C to stop)";
         } else {
-            std::cout << "[Reader] Processing packets...\n";
+            PLOG_INFO("reader") << "processing packets";
         }
         RawPacket raw;
         ParsedPacket parsed;
@@ -498,7 +501,7 @@ public:
             if (st == PacketSource::Status::End) break;
             if (st == PacketSource::Status::Timeout) continue;
             if (st == PacketSource::Status::Failed) {
-                std::cerr << "[Reader] " << source.errorMessage() << "\n";
+                PLOG_ERROR("reader") << source.errorMessage();
                 break;
             }
             if (!PacketParser::parse(raw, parsed)) continue;
@@ -562,10 +565,9 @@ public:
             lbs_[lb_idx]->queue().push(std::move(pkt));
         }
         
-        std::cout << "[Reader] Done reading " << pkt_id << " packets\n";
+        PLOG_INFO("reader") << "done reading " << pkt_id << " packets";
         if (source.isLive() && source.kernelDrops() > 0) {
-            std::cout << "[Reader] Kernel dropped " << source.kernelDrops()
-                      << " frames before capture\n";
+            PLOG_WARN("reader") << "kernel dropped " << source.kernelDrops() << " frames";
         }
         source.close();
 
@@ -588,6 +590,41 @@ public:
         return true;
     }
 
+    // Prometheus text exposition, safe to call from the metrics thread.
+    std::string metricsText() {
+        using namespace prism::metrics;
+        std::string o;
+        o += counter("prism_packets_total", "Frames read from the source",
+                     (int64_t)stats_.total_packets.load());
+        o += counter("prism_bytes_total", "Bytes read from the source",
+                     (int64_t)stats_.total_bytes.load());
+        o += counter("prism_tcp_packets_total", "TCP frames", (int64_t)stats_.tcp_packets.load());
+        o += counter("prism_udp_packets_total", "UDP frames", (int64_t)stats_.udp_packets.load());
+        o += counter("prism_forwarded_total", "Frames forwarded",
+                     (int64_t)stats_.forwarded.load());
+        o += counter("prism_dropped_total", "Frames dropped by a rule",
+                     (int64_t)stats_.dropped.load());
+
+        int64_t qdepth = (int64_t)output_queue_.size();
+        for (auto& lb : lbs_) qdepth += (int64_t)lb->queue().size();
+        for (auto& fp : fps_) qdepth += (int64_t)fp->queue().size();
+        o += gauge("prism_queue_depth", "Packets queued across all stages", qdepth);
+
+        std::vector<std::pair<std::string, int64_t>> apps, labels, ja4s;
+        {
+            std::lock_guard<std::mutex> lk(stats_.app_mutex);
+            for (auto& [a, n] : stats_.app_counts)
+                apps.emplace_back(appTypeToString(a), (int64_t)n);
+            for (auto& [l, n] : stats_.label_counts) labels.emplace_back(l, (int64_t)n);
+            for (auto& [f, n] : stats_.ja4_counts) ja4s.emplace_back(f, (int64_t)n);
+        }
+        o += labeled("prism_app_packets_total", "Packets per detected app", "counter", "app", apps);
+        o += labeled("prism_signature_label_flows", "Flows per signature label", "counter",
+                     "label", labels);
+        o += labeled("prism_ja4_flows", "Flows per JA4 fingerprint", "counter", "ja4", ja4s);
+        return o;
+    }
+
 private:
     Config config_;
     Rules rules_;
@@ -595,7 +632,7 @@ private:
     TSQueue<Packet> output_queue_;
     std::vector<std::unique_ptr<FastPath>> fps_;
     std::vector<std::unique_ptr<LoadBalancer>> lbs_;
-    
+
     void printReport() {
         std::cout << "\n";
         std::cout << "╔══════════════════════════════════════════════════════════════╗\n";
@@ -700,6 +737,14 @@ int main(int argc, char* argv[]) {
         return opt.help ? 0 : 1;
     }
 
+    prism::LogLevel lvl;
+    if (!prism::parseLogLevel(opt.log_level, lvl)) {
+        std::cerr << "prism: unknown --log-level '" << opt.log_level << "'\n";
+        return 2;
+    }
+    prism::setLogLevel(lvl);
+    prism::setLogJson(opt.log_json);
+
     // Engine-specific flags left over by parseRunOptions.
     DPIEngine::Config cfg;
     std::vector<std::string> block_ips, block_apps, block_domains;
@@ -735,9 +780,24 @@ int main(int argc, char* argv[]) {
     for (const auto& app : block_apps) engine.blockApp(app);
     for (const auto& dom : block_domains) engine.blockDomain(dom);
 
-    if (!engine.process(*source, opt.pcap_out, opt.max_frames)) {
-        return 1;
+    std::unique_ptr<prism::MetricsServer> metrics;
+    std::string mhost;
+    uint16_t mport = 0;
+    if (metricsEndpoint(opt, mhost, mport, err)) {
+        metrics = std::make_unique<prism::MetricsServer>(
+            mhost, mport, [&engine] { return engine.metricsText(); });
+        if (!metrics->start(err)) {
+            std::cerr << "prism: " << err << "\n";
+            return 1;
+        }
+    } else if (!err.empty()) {
+        std::cerr << "prism: " << err << "\n";
+        return 2;
     }
+
+    bool ok = engine.process(*source, opt.pcap_out, opt.max_frames);
+    if (metrics) metrics->stop();
+    if (!ok) return 1;
 
     std::cout << "\nOutput written to: " << opt.pcap_out << "\n";
     return 0;

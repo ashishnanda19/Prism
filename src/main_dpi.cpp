@@ -11,6 +11,8 @@
 
 #include "capture_cli.h"
 #include "dpi_engine.h"
+#include "http_server.h"
+#include "log.h"
 #include "signature_set.h"
 
 using namespace DPI;
@@ -80,6 +82,14 @@ int main(int argc, char* argv[]) {
         return opt.help ? 0 : 1;
     }
 
+    prism::LogLevel lvl;
+    if (!prism::parseLogLevel(opt.log_level, lvl)) {
+        std::cerr << "prism-classic: unknown --log-level '" << opt.log_level << "'\n";
+        return 2;
+    }
+    prism::setLogLevel(lvl);
+    prism::setLogJson(opt.log_json);
+
     DPIEngine::Config config;
     config.num_load_balancers = 2;
     config.fps_per_lb = 2;
@@ -126,7 +136,24 @@ int main(int argc, char* argv[]) {
     for (const auto& app : block_apps) engine.blockApp(app);
     for (const auto& domain : block_domains) engine.blockDomain(domain);
 
-    if (!engine.processFile(*source, opt.pcap_out, opt.max_frames)) {
+    std::unique_ptr<prism::MetricsServer> metrics;
+    std::string mhost;
+    uint16_t mport = 0;
+    if (PacketAnalyzer::metricsEndpoint(opt, mhost, mport, err)) {
+        metrics = std::make_unique<prism::MetricsServer>(
+            mhost, mport, [&engine] { return engine.metricsText(); });
+        if (!metrics->start(err)) {
+            std::cerr << "prism-classic: " << err << "\n";
+            return 1;
+        }
+    } else if (!err.empty()) {
+        std::cerr << "prism-classic: " << err << "\n";
+        return 2;
+    }
+
+    bool ok = engine.processFile(*source, opt.pcap_out, opt.max_frames);
+    if (metrics) metrics->stop();
+    if (!ok) {
         std::cerr << "Failed to process\n";
         return 1;
     }

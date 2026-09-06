@@ -979,6 +979,21 @@ SNI is missing (Encrypted ClientHello) or generic, `ja3`/`ja4` rules attribute
 the flow. `prism`'s report lists the observed fingerprints and signature
 labels.
 
+### Observability
+
+```bash
+# structured logs (JSON lines) + a Prometheus endpoint
+./build/bin/prism --iface eth0 --log-json --metrics 127.0.0.1:9109 -o /dev/null
+curl -s localhost:9109/metrics
+
+# one-command Grafana stack (Prism + Prometheus + provisioned dashboard)
+cd deploy && docker compose up --build   # Grafana on :3000
+```
+
+`--log-level trace|debug|info|warn|error|off`, `--log-json` for line-based
+ingestion. `--metrics <host:port|port>` serves Prometheus text on `/metrics`
+(and `/healthz`). Metrics + panels are documented in [deploy/README.md](deploy/README.md).
+
 ### Creating Test Data
 
 ```bash
@@ -1068,7 +1083,7 @@ Prism is being taken from "portfolio project" to production-grade in tracked ste
 | 3 | TCP first-flight reassembly — classify TLS ClientHellos that span multiple segments (`TcpReassembler`, wired into `prism` + `prism-classic`) | ✅ done |
 | 4 | Live capture — `PacketSource` abstraction; `AF_PACKET` (Linux) / `BPF` (macOS) live source with `--iface`, `--count`, `--promisc`, Ctrl-C stop | ✅ done |
 | 5 | Signature DSL (`--signatures`, hot-swappable rules) + JA3 / JA4 TLS fingerprinting | ✅ done (real QUIC v1 Initial decode still pending) |
-| 6 | Structured logging, Prometheus `/metrics` + Grafana dashboard, flow export (IPFIX / JSON) | planned |
+| 6 | Structured logging (`--log-json`), Prometheus `/metrics` endpoint, one-command Grafana stack in [deploy/](deploy/) | ✅ done (IPFIX flow export still pending) |
 | 7 | One flagship feature — JA4+ client DB, XDP/eBPF prefilter, HTTP/3 decode, or per-flow "explain the verdict" | planned |
 
 Smaller follow-ups already noted in code: replace the substring-based `sniToAppType`

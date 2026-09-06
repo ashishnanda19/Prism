@@ -126,6 +126,9 @@ public:
     
     // Generate classification report (app distribution)
     std::string generateClassificationReport() const;
+
+    // Prometheus text exposition -- safe to call from the metrics server thread.
+    std::string metricsText() const;
     
     // Get real-time statistics
     const DPIStats& getStats() const;
