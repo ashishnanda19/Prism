@@ -939,16 +939,25 @@ clang-tidy, and a 60 s fuzz smoke run per harness on every push and PR.
 ### Running an engine
 
 ```bash
-./build/bin/prism test_dpi.pcap output.pcap
+# offline: read a capture file
+./build/bin/prism test_dpi.pcap -o output.pcap
+
+# live: capture from an interface (needs root / CAP_NET_RAW; AF_PACKET on
+# Linux, BPF on macOS). Ctrl-C to stop.
+sudo ./build/bin/prism --iface eth0 -o output.pcap
+./build/bin/prism --iface en0 --count 500 -o output.pcap   # stop after 500 frames
 
 # with blocking rules
-./build/bin/prism test_dpi.pcap output.pcap \
+./build/bin/prism test_dpi.pcap -o output.pcap \
     --block-app YouTube --block-app TikTok \
     --block-ip 192.168.1.50 --block-domain facebook
 
 # multi-threaded engines accept a thread layout
-./build/bin/prism input.pcap output.pcap --lbs 4 --fps 4   # 4 LB × 4 FP = 16 workers
+./build/bin/prism input.pcap -o output.pcap --lbs 4 --fps 4   # 4 LB × 4 FP = 16 workers
 ```
+
+`prism` and `prism-classic` support `--iface`; `prism-lite` is file-only.
+Run `./build/bin/prism --help` for the full flag list.
 
 ### Creating Test Data
 
@@ -1037,7 +1046,7 @@ Prism is being taken from "portfolio project" to production-grade in tracked ste
 | 1 | Consolidated CMake build (`libprism_core` + `prism` / `prism-lite` / `prism-classic` / `prism-dump`), doctest unit suite, sanitizer options | ✅ done |
 | 2 | GitHub Actions CI — gcc/clang/macOS build matrix, ASan+UBSan / TSan runs, clang-tidy, libFuzzer harnesses for every parser | ✅ done |
 | 3 | TCP first-flight reassembly — classify TLS ClientHellos that span multiple segments (`TcpReassembler`, wired into `prism` + `prism-classic`) | ✅ done |
-| 4 | Live capture — `AF_PACKET` (Linux) / `BPF` (macOS) source, optional inline mode | planned |
+| 4 | Live capture — `PacketSource` abstraction; `AF_PACKET` (Linux) / `BPF` (macOS) live source with `--iface`, `--count`, `--promisc`, Ctrl-C stop | ✅ done |
 | 5 | Signature DSL + JA3/JA4(+) TLS fingerprinting; real QUIC v1 Initial decode | planned |
 | 6 | Structured logging, Prometheus `/metrics` + Grafana dashboard, flow export (IPFIX / JSON) | planned |
 | 7 | One flagship feature — JA4+ client DB, XDP/eBPF prefilter, HTTP/3 decode, or per-flow "explain the verdict" | planned |

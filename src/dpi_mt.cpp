@@ -22,6 +22,9 @@
 #include <algorithm>
 #include <optional>
 
+#include <csignal>
+
+#include "capture_cli.h"
 #include "pcap_reader.h"
 #include "packet_parser.h"
 #include "sni_extractor.h"
@@ -30,6 +33,9 @@
 
 using namespace PacketAnalyzer;
 using namespace DPI;
+
+// Set from a SIGINT handler so a live capture stops cleanly on Ctrl-C.
+static std::atomic<bool> g_running{true};
 
 // =============================================================================
 // Thread-Safe Queue
@@ -411,20 +417,17 @@ public:
     void blockApp(const std::string& app) { rules_.blockApp(app); }
     void blockDomain(const std::string& dom) { rules_.blockDomain(dom); }
     
-    bool process(const std::string& input_file, const std::string& output_file) {
-        // Open input
-        PcapReader reader;
-        if (!reader.open(input_file)) return false;
-        
+    bool process(PacketSource& source, const std::string& output_file, long max_frames = -1) {
         // Open output
         std::ofstream output(output_file, std::ios::binary);
         if (!output.is_open()) {
             std::cerr << "Cannot open output file\n";
             return false;
         }
-        
-        // Write PCAP header
-        const auto& hdr = reader.getGlobalHeader();
+
+        // Write PCAP header (synthesized: preserves link type, standardises the rest)
+        PcapGlobalHeader hdr = makePcapHeader(
+            source.linkType() ? source.linkType() : LINKTYPE_ETHERNET, 262144);
         output.write(reinterpret_cast<const char*>(&hdr), sizeof(hdr));
         
         // Start all threads
@@ -450,12 +453,24 @@ public:
         });
         
         // Read and dispatch packets
-        std::cout << "[Reader] Processing packets...\n";
+        if (source.isLive()) {
+            std::cout << "[Reader] Capturing live... (Ctrl-C to stop)\n";
+        } else {
+            std::cout << "[Reader] Processing packets...\n";
+        }
         RawPacket raw;
         ParsedPacket parsed;
         uint32_t pkt_id = 0;
-        
-        while (reader.readNextPacket(raw)) {
+
+        while (g_running) {
+            if (max_frames >= 0 && pkt_id >= static_cast<uint32_t>(max_frames)) break;
+            auto st = source.next(raw);
+            if (st == PacketSource::Status::End) break;
+            if (st == PacketSource::Status::Timeout) continue;
+            if (st == PacketSource::Status::Failed) {
+                std::cerr << "[Reader] " << source.errorMessage() << "\n";
+                break;
+            }
             if (!PacketParser::parse(raw, parsed)) continue;
             if (!parsed.has_ip || (!parsed.has_tcp && !parsed.has_udp)) continue;
             
@@ -518,8 +533,12 @@ public:
         }
         
         std::cout << "[Reader] Done reading " << pkt_id << " packets\n";
-        reader.close();
-        
+        if (source.isLive() && source.kernelDrops() > 0) {
+            std::cout << "[Reader] Kernel dropped " << source.kernelDrops()
+                      << " frames before capture\n";
+        }
+        source.close();
+
         // Wait for queues to drain
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
         
@@ -610,55 +629,67 @@ private:
 // Main
 // =============================================================================
 void printUsage(const char* prog) {
-    std::cout << R"(
-Prism v2.0 - Multi-threaded Deep Packet Inspection Engine
-========================================================
-
-Usage: )" << prog << R"( <input.pcap> <output.pcap> [options]
-
-Options:
-  --block-ip <ip>        Block source IP
-  --block-app <app>      Block application (YouTube, Facebook, etc.)
-  --block-domain <dom>   Block domain (substring match)
-  --lbs <n>              Number of load balancer threads (default: 2)
-  --fps <n>              FP threads per LB (default: 2)
-
-Example:
-  )" << prog << R"( capture.pcap filtered.pcap --block-app YouTube --block-ip 192.168.1.50
-)";
+    std::cout << "\nPrism v2.0 - Multi-threaded Deep Packet Inspection Engine\n"
+              << "========================================================\n\n"
+              << "Usage: " << prog << " (<input.pcap> | --iface <name>) [options]\n\n"
+              << captureHelp()
+              << "\nEngine:\n"
+                 "  --block-ip <ip>        Block source IP\n"
+                 "  --block-app <app>     Block application (YouTube, Facebook, ...)\n"
+                 "  --block-domain <dom>  Block domain (substring match)\n"
+                 "  --lbs <n>             Load balancer threads (default: 2)\n"
+                 "  --fps <n>             FP threads per LB (default: 2)\n\n"
+              << "Examples:\n"
+              << "  " << prog << " capture.pcap -o filtered.pcap --block-app YouTube\n"
+              << "  sudo " << prog << " --iface eth0 --block-domain tiktok\n";
 }
 
 int main(int argc, char* argv[]) {
-    if (argc < 3) {
-        printUsage(argv[0]);
-        return 1;
+    RunOptions opt;
+    std::string err;
+    if (!parseRunOptions(argc, argv, opt, err)) {
+        std::cerr << "prism: " << err << "\n";
+        return 2;
     }
-    
-    std::string input = argv[1];
-    std::string output = argv[2];
-    
+    if (opt.help || (opt.pcap_in.empty() && opt.iface.empty())) {
+        printUsage(argv[0]);
+        return opt.help ? 0 : 1;
+    }
+
+    // Engine-specific flags left over by parseRunOptions.
     DPIEngine::Config cfg;
     std::vector<std::string> block_ips, block_apps, block_domains;
-    
-    for (int i = 3; i < argc; i++) {
-        std::string arg = argv[i];
-        if (arg == "--block-ip" && i + 1 < argc) block_ips.push_back(argv[++i]);
-        else if (arg == "--block-app" && i + 1 < argc) block_apps.push_back(argv[++i]);
-        else if (arg == "--block-domain" && i + 1 < argc) block_domains.push_back(argv[++i]);
-        else if (arg == "--lbs" && i + 1 < argc) cfg.num_lbs = std::stoi(argv[++i]);
-        else if (arg == "--fps" && i + 1 < argc) cfg.fps_per_lb = std::stoi(argv[++i]);
+    for (size_t i = 0; i < opt.rest.size(); ++i) {
+        const std::string& a = opt.rest[i];
+        auto val = [&]() -> std::string {
+            return (i + 1 < opt.rest.size()) ? opt.rest[++i] : std::string();
+        };
+        if (a == "--block-ip") block_ips.push_back(val());
+        else if (a == "--block-app") block_apps.push_back(val());
+        else if (a == "--block-domain") block_domains.push_back(val());
+        else if (a == "--lbs") cfg.num_lbs = std::stoi(val());
+        else if (a == "--fps") cfg.fps_per_lb = std::stoi(val());
+        else { std::cerr << "prism: unknown option '" << a << "'\n"; return 2; }
     }
-    
+
+    auto source = openSource(opt, err);
+    if (!source) {
+        std::cerr << "prism: " << err << "\n";
+        return 1;
+    }
+
+    std::signal(SIGINT, [](int) { g_running = false; });
+    std::signal(SIGTERM, [](int) { g_running = false; });
+
     DPIEngine engine(cfg);
-    
     for (const auto& ip : block_ips) engine.blockIP(ip);
     for (const auto& app : block_apps) engine.blockApp(app);
     for (const auto& dom : block_domains) engine.blockDomain(dom);
-    
-    if (!engine.process(input, output)) {
+
+    if (!engine.process(*source, opt.pcap_out, opt.max_frames)) {
         return 1;
     }
-    
-    std::cout << "\nOutput written to: " << output << "\n";
+
+    std::cout << "\nOutput written to: " << opt.pcap_out << "\n";
     return 0;
 }

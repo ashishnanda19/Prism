@@ -8,6 +8,7 @@
 
 #include "types.h"
 #include "pcap_reader.h"
+#include "packet_source.h"
 #include "packet_parser.h"
 #include "load_balancer.h"
 #include "fast_path.h"
@@ -72,11 +73,14 @@ public:
     // Initialize the engine (create threads, queues)
     bool initialize();
     
-    // Process a PCAP file
-    // input_file: Path to input PCAP (user traffic)
-    // output_file: Path to output PCAP (forwarded traffic)
-    bool processFile(const std::string& input_file, 
-                     const std::string& output_file);
+    // Process frames from a source (PCAP file or live interface) until it ends
+    // or a stop is requested (see the module-level g_dpi_running flag).
+    //   source:     an already-opened PacketSource
+    //   output_file: path to the output PCAP (forwarded traffic)
+    //   max_frames:  stop after this many frames (-1 = unlimited)
+    bool processFile(PacketAnalyzer::PacketSource& source,
+                     const std::string& output_file,
+                     long max_frames = -1);
     
     // Start the engine (starts all threads)
     void start();
@@ -173,13 +177,16 @@ private:
     void writeOutputPacket(const PacketJob& job);
     
     // Reader function
-    void readerThreadFunc(const std::string& input_file);
+    void readerThreadFunc(PacketAnalyzer::PacketSource* source, long max_frames);
     
     // Convert ParsedPacket to PacketJob
     PacketJob createPacketJob(const PacketAnalyzer::RawPacket& raw,
                                const PacketAnalyzer::ParsedPacket& parsed,
                                uint32_t packet_id);
 };
+
+// Flipped by a signal handler in main() so a live capture stops on Ctrl-C.
+extern std::atomic<bool> g_dpi_running;
 
 } // namespace DPI
 

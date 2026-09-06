@@ -51,10 +51,24 @@ jobs:
         run: |
           set -e
           for e in prism prism-lite prism-classic; do
-            ./build/bin/$e test_dpi.pcap "out-$e.pcap"
+            ./build/bin/$e test_dpi.pcap -o "out-$e.pcap"
             test -s "out-$e.pcap"
           done
           ./build/bin/prism-dump test_dpi.pcap > /dev/null
+
+      - name: Live-capture smoke (Linux, loopback)
+        # Exercises the AF_PACKET path end to end. Non-blocking: the compile and
+        # sanitizer jobs are the real gates; here we just want "it doesn't crash".
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        run: |
+          set -x
+          ( for i in $(seq 1 200); do ping -c1 -W1 127.0.0.1 >/dev/null 2>&1 || true; sleep 0.02; done ) &
+          timeout 30 sudo ./build/bin/prism         --iface lo --count 25 -o live-mt.pcap      || true
+          timeout 30 sudo ./build/bin/prism-classic --iface lo --count 25 -o live-classic.pcap || true
+          wait || true
+          ls -l live-mt.pcap live-classic.pcap || true
+          ./build/bin/prism-dump live-mt.pcap 2>&1 | head -8 || true
 
   # ---------------------------------------------------------------------------
   # Sanitized unit tests: ASan+UBSan (blocking) and TSan (blocking for tests)

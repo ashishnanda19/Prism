@@ -12,6 +12,8 @@
 
 namespace DPI {
 
+std::atomic<bool> g_dpi_running{true};
+
 // ============================================================================
 // DPIEngine Implementation
 // ============================================================================
@@ -125,31 +127,32 @@ void DPIEngine::waitForCompletion() {
     processing_complete_ = true;
 }
 
-bool DPIEngine::processFile(const std::string& input_file,
-                            const std::string& output_file) {
-    
-    std::cout << "\n[DPIEngine] Processing: " << input_file << "\n";
-    std::cout << "[DPIEngine] Output to:  " << output_file << "\n\n";
-    
+bool DPIEngine::processFile(PacketAnalyzer::PacketSource& source,
+                            const std::string& output_file,
+                            long max_frames) {
+
+    std::cout << "\n[DPIEngine] Input: " << (source.isLive() ? "live interface" : "pcap file")
+              << "\n[DPIEngine] Output to:  " << output_file << "\n\n";
+
     // Initialize if not already done
     if (!rule_manager_) {
         if (!initialize()) {
             return false;
         }
     }
-    
+
     // Open output file
     output_file_.open(output_file, std::ios::binary);
     if (!output_file_.is_open()) {
         std::cerr << "[DPIEngine] Error: Cannot open output file\n";
         return false;
     }
-    
+
     // Start processing threads
     start();
-    
+
     // Start reader thread
-    reader_thread_ = std::thread(&DPIEngine::readerThreadFunc, this, input_file);
+    reader_thread_ = std::thread(&DPIEngine::readerThreadFunc, this, &source, max_frames);
     
     // Wait for completion
     waitForCompletion();
@@ -172,29 +175,35 @@ bool DPIEngine::processFile(const std::string& input_file,
     return true;
 }
 
-void DPIEngine::readerThreadFunc(const std::string& input_file) {
-    PacketAnalyzer::PcapReader reader;
-    
-    if (!reader.open(input_file)) {
-        std::cerr << "[Reader] Error: Cannot open input file\n";
-        return;
-    }
-    
-    // Write PCAP header to output
-    writeOutputHeader(reader.getGlobalHeader());
-    
+void DPIEngine::readerThreadFunc(PacketAnalyzer::PacketSource* source, long max_frames) {
+    using PacketAnalyzer::PacketSource;
+
+    // Write a synthesized PCAP header (preserves the link type).
+    writeOutputHeader(PacketAnalyzer::makePcapHeader(
+        source->linkType() ? source->linkType() : PacketAnalyzer::LINKTYPE_ETHERNET, 262144));
+
     PacketAnalyzer::RawPacket raw;
     PacketAnalyzer::ParsedPacket parsed;
     uint32_t packet_id = 0;
-    
-    std::cout << "[Reader] Starting packet processing...\n";
-    
-    while (reader.readNextPacket(raw)) {
+
+    std::cout << (source->isLive() ? "[Reader] Capturing live... (Ctrl-C to stop)\n"
+                                   : "[Reader] Starting packet processing...\n");
+
+    while (g_dpi_running) {
+        if (max_frames >= 0 && packet_id >= static_cast<uint32_t>(max_frames)) break;
+        auto st = source->next(raw);
+        if (st == PacketSource::Status::End) break;
+        if (st == PacketSource::Status::Timeout) continue;
+        if (st == PacketSource::Status::Failed) {
+            std::cerr << "[Reader] " << source->errorMessage() << "\n";
+            break;
+        }
+
         // Parse the packet
         if (!PacketAnalyzer::PacketParser::parse(raw, parsed)) {
             continue;  // Skip unparseable packets
         }
-        
+
         // Only process IP packets with TCP/UDP
         if (!parsed.has_ip || (!parsed.has_tcp && !parsed.has_udp)) {
             continue;
@@ -219,7 +228,10 @@ void DPIEngine::readerThreadFunc(const std::string& input_file) {
     }
     
     std::cout << "[Reader] Finished reading " << packet_id << " packets\n";
-    reader.close();
+    if (source->isLive() && source->kernelDrops() > 0) {
+        std::cout << "[Reader] Kernel dropped " << source->kernelDrops() << " frames\n";
+    }
+    source->close();
 }
 
 PacketJob DPIEngine::createPacketJob(const PacketAnalyzer::RawPacket& raw,

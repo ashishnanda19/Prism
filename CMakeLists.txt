@@ -79,6 +79,9 @@ find_package(Threads REQUIRED)
 add_library(prism_core STATIC
     src/pcap_reader.cpp
     src/packet_parser.cpp
+    src/packet_source.cpp
+    src/live_source.cpp
+    src/capture_cli.cpp
     src/sni_extractor.cpp
     src/tcp_reassembler.cpp
     src/types.cpp
