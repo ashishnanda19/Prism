@@ -140,7 +140,7 @@ public:
 
 private:
     std::vector<std::unique_ptr<LoadBalancer>> lbs_;
-    int fps_per_lb_;
+    [[maybe_unused]] int fps_per_lb_;
 };
 
 } // namespace DPI

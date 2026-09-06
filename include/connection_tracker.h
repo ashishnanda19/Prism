@@ -79,7 +79,7 @@ public:
     void forEach(std::function<void(const Connection&)> callback) const;
 
 private:
-    int fp_id_;
+    [[maybe_unused]] int fp_id_;
     size_t max_connections_;
     
     // Connection table

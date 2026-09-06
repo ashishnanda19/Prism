@@ -214,7 +214,7 @@ public:
     uint64_t processed() const { return processed_; }
 
 private:
-    int id_;
+    [[maybe_unused]] int id_;
     Rules* rules_;
     Stats* stats_;
     TSQueue<Packet>* output_queue_;
@@ -329,7 +329,7 @@ public:
     uint64_t dispatched() const { return dispatched_; }
 
 private:
-    int id_;
+    [[maybe_unused]] int id_;
     std::vector<FastPath*> fps_;
     size_t num_fps_;
     TSQueue<Packet> input_queue_;
