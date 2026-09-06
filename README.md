@@ -140,12 +140,15 @@ TLS Client Hello:
                     └─────────────┘
 ```
 
-### Two Versions
+### Engine variants
 
-| Version | File | Use Case |
-|---------|------|----------|
-| Simple (Single-threaded) | `src/main_working.cpp` | Learning, small captures |
-| Multi-threaded | `src/dpi_mt.cpp` | Production, large captures |
+| Binary | File | Use case |
+|--------|------|----------|
+| `prism-lite` | `src/main_working.cpp` | single-threaded reference — easiest to read/debug |
+| `prism` | `src/dpi_mt.cpp` | multi-threaded, self-contained pipeline |
+| `prism-classic` | `src/main_dpi.cpp` + components | component-structured multi-threaded engine; the architecture the roadmap builds on |
+
+See [Building and Running](#10-building-and-running) for the full target list.
 
 ---
 
@@ -1025,43 +1028,24 @@ python3 generate_test_pcap.py
 
 ---
 
-## 12. Extending the Project
+## 12. Roadmap
 
-### Ideas for Improvement
+Prism is being taken from "portfolio project" to production-grade in tracked steps.
 
-1. **Add More App Signatures**
-   ```cpp
-   // In types.cpp
-   if (sni.find("twitch") != std::string::npos)
-       return AppType::TWITCH;
-   ```
+| # | Step | Status |
+|---|------|--------|
+| 1 | Consolidated CMake build (`libprism_core` + `prism` / `prism-lite` / `prism-classic` / `prism-dump`), doctest unit suite, sanitizer options | ✅ done |
+| 2 | GitHub Actions CI — gcc/clang/macOS build matrix, ASan+UBSan / TSan runs, clang-tidy, libFuzzer harnesses for every parser | ✅ done |
+| 3 | TCP first-flight reassembly — classify TLS ClientHellos that span multiple segments | planned |
+| 4 | Live capture — `AF_PACKET` (Linux) / `BPF` (macOS) source, optional inline mode | planned |
+| 5 | Signature DSL + JA3/JA4(+) TLS fingerprinting; real QUIC v1 Initial decode | planned |
+| 6 | Structured logging, Prometheus `/metrics` + Grafana dashboard, flow export (IPFIX / JSON) | planned |
+| 7 | One flagship feature — JA4+ client DB, XDP/eBPF prefilter, HTTP/3 decode, or per-flow "explain the verdict" | planned |
 
-2. **Add Bandwidth Throttling**
-   ```cpp
-   // Instead of DROP, delay packets
-   if (shouldThrottle(flow)) {
-       std::this_thread::sleep_for(10ms);
-   }
-   ```
-
-3. **Add Live Statistics Dashboard**
-   ```cpp
-   // Separate thread printing stats every second
-   void statsThread() {
-       while (running) {
-           printStats();
-           sleep(1);
-       }
-   }
-   ```
-
-4. **Add QUIC/HTTP3 Support**
-   - QUIC uses UDP on port 443
-   - SNI is in the Initial packet (encrypted differently)
-
-5. **Add Persistent Rules**
-   - Save rules to file
-   - Load on startup
+Smaller follow-ups already noted in code: replace the substring-based `sniToAppType`
+with the step-5 signature engine; give the connection table sharded locks + a timing
+wheel instead of the O(n) eviction scan; keep IP addresses binary end-to-end instead
+of round-tripping through strings.
 
 ---
 
