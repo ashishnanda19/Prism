@@ -80,6 +80,7 @@ add_library(prism_core STATIC
     src/pcap_reader.cpp
     src/packet_parser.cpp
     src/sni_extractor.cpp
+    src/tcp_reassembler.cpp
     src/types.cpp
     # Flow + policy units (currently used by the "classic" engine; kept in the
     # core library so the test suite and future engines can link them).

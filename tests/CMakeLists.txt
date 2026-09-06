@@ -20,6 +20,7 @@ add_executable(prism_tests
     test_packet_parser.cpp
     test_sni_extractor.cpp
     test_pcap_reader.cpp
+    test_tcp_reassembler.cpp
 )
 target_link_libraries(prism_tests PRIVATE prism_core doctest prism_sanitize)
 target_compile_definitions(prism_tests PRIVATE

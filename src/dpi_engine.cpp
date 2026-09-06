@@ -256,6 +256,7 @@ PacketJob DPIEngine::createPacketJob(const PacketAnalyzer::RawPacket& raw,
     
     // TCP flags
     job.tcp_flags = parsed.tcp_flags;
+    job.tcp_seq = parsed.seq_number;
     
     // Copy packet data
     job.data = raw.data;

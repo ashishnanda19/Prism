@@ -25,6 +25,7 @@
 #include "pcap_reader.h"
 #include "packet_parser.h"
 #include "sni_extractor.h"
+#include "tcp_reassembler.h"
 #include "types.h"
 
 using namespace PacketAnalyzer;
@@ -92,6 +93,7 @@ struct Packet {
     FiveTuple tuple;
     std::vector<uint8_t> data;
     uint8_t tcp_flags;
+    uint32_t tcp_seq = 0;   // raw TCP sequence number (first payload byte)
     size_t payload_offset;
     size_t payload_length;
 };
@@ -107,6 +109,7 @@ struct FlowEntry {
     uint64_t bytes = 0;
     bool blocked = false;
     bool classified = false;
+    std::unique_ptr<TcpReassembler> reasm;  // client first-flight, lazily created
 };
 
 // =============================================================================
@@ -265,42 +268,55 @@ private:
     }
     
     void classifyFlow(Packet& pkt, FlowEntry& flow) {
-        // Try SNI extraction for HTTPS
-        if (pkt.tuple.dst_port == 443 && pkt.payload_length > 5) {
-            const uint8_t* payload = pkt.data.data() + pkt.payload_offset;
-            auto sni = SNIExtractor::extract(payload, pkt.payload_length);
-            if (sni) {
-                flow.sni = *sni;
-                flow.app_type = sniToAppType(*sni);
-                flow.classified = true;
-                return;
+        const bool is_tls  = pkt.tuple.protocol == 6 && pkt.tuple.dst_port == 443;
+        const bool is_http = pkt.tuple.protocol == 6 && pkt.tuple.dst_port == 80;
+
+        if (is_tls || is_http) {
+            // Reassemble the client's first flight so a ClientHello / request
+            // split across TCP segments still classifies.
+            if (!flow.reasm) flow.reasm = std::make_unique<TcpReassembler>();
+            if (!flow.reasm->full()) {
+                const bool syn = (pkt.tcp_flags & 0x02) && !(pkt.tcp_flags & 0x10);
+                const uint8_t* p = pkt.data.data() + pkt.payload_offset;
+                flow.reasm->addSegment(pkt.tcp_seq, syn,
+                                       pkt.payload_length ? p : nullptr,
+                                       pkt.payload_length);
             }
-        }
-        
-        // Try HTTP Host extraction
-        if (pkt.tuple.dst_port == 80 && pkt.payload_length > 10) {
-            const uint8_t* payload = pkt.data.data() + pkt.payload_offset;
-            auto host = HTTPHostExtractor::extract(payload, pkt.payload_length);
-            if (host) {
-                flow.sni = *host;
-                flow.app_type = sniToAppType(*host);
-                flow.classified = true;
-                return;
+            const auto& buf = flow.reasm->data();
+
+            if (is_tls && buf.size() > 5) {
+                if (auto sni = SNIExtractor::extract(buf.data(), buf.size())) {
+                    flow.sni = *sni;
+                    flow.app_type = sniToAppType(*sni);
+                    flow.classified = true;
+                    flow.reasm.reset();
+                    return;
+                }
             }
+            if (is_http && buf.size() > 10) {
+                if (auto host = HTTPHostExtractor::extract(buf.data(), buf.size())) {
+                    flow.sni = *host;
+                    flow.app_type = sniToAppType(*host);
+                    flow.classified = true;
+                    flow.reasm.reset();
+                    return;
+                }
+            }
+
+            // Provisional port-based label; stop buffering once we've seen enough.
+            flow.app_type = is_tls ? AppType::HTTPS : AppType::HTTP;
+            if (flow.reasm->full()) {
+                flow.classified = true;
+                flow.reasm.reset();
+            }
+            return;
         }
-        
+
         // DNS
         if (pkt.tuple.dst_port == 53 || pkt.tuple.src_port == 53) {
             flow.app_type = AppType::DNS;
             flow.classified = true;
             return;
-        }
-        
-        // Port-based fallback (but don't mark as classified - might get SNI later)
-        if (pkt.tuple.dst_port == 443) {
-            flow.app_type = AppType::HTTPS;
-        } else if (pkt.tuple.dst_port == 80) {
-            flow.app_type = AppType::HTTP;
         }
     }
 };
@@ -449,6 +465,7 @@ public:
             pkt.ts_sec = raw.header.ts_sec;
             pkt.ts_usec = raw.header.ts_usec;
             pkt.tcp_flags = parsed.tcp_flags;
+            pkt.tcp_seq = parsed.seq_number;  // only meaningful for TCP
             pkt.data = std::move(raw.data);
             
             // Parse 5-tuple

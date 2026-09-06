@@ -7,6 +7,7 @@
 #define CONNECTION_TRACKER_H
 
 #include "types.h"
+#include "tcp_reassembler.h"
 #include <unordered_map>
 #include <shared_mutex>
 #include <vector>
@@ -43,6 +44,12 @@ public:
     // Update connection with new packet
     void updateConnection(Connection* conn, size_t packet_size, bool is_outbound);
     
+    // First-flight (client -> server) reassembler for a flow. Created on first
+    // access; freed by dropFirstFlight() once the flow is classified and by the
+    // stale/clear/evict paths.
+    TcpReassembler& firstFlight(const FiveTuple& tuple);
+    void dropFirstFlight(const FiveTuple& tuple);
+
     // Mark connection as classified
     void classifyConnection(Connection* conn, AppType app, const std::string& sni);
     
@@ -86,7 +93,11 @@ private:
     // Note: FiveTuple hash ensures consistent mapping, so we don't need
     // to handle bidirectional flows specially here
     std::unordered_map<FiveTuple, Connection, FiveTupleHash> connections_;
-    
+
+    // First-flight reassemblers, parallel to `connections_` (kept out of
+    // Connection so that type stays cheaply copyable for reporting).
+    std::unordered_map<FiveTuple, TcpReassembler, FiveTupleHash> reasm_;
+
     // Statistics
     size_t total_seen_ = 0;
     size_t classified_count_ = 0;

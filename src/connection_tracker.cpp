@@ -73,15 +73,24 @@ void ConnectionTracker::updateConnection(Connection* conn, size_t packet_size, b
     }
 }
 
+TcpReassembler& ConnectionTracker::firstFlight(const FiveTuple& tuple) {
+    return reasm_[tuple];
+}
+
+void ConnectionTracker::dropFirstFlight(const FiveTuple& tuple) {
+    reasm_.erase(tuple);
+}
+
 void ConnectionTracker::classifyConnection(Connection* conn, AppType app, const std::string& sni) {
     if (!conn) return;
-    
+
     if (conn->state != ConnectionState::CLASSIFIED) {
         conn->app_type = app;
         conn->sni = sni;
         conn->state = ConnectionState::CLASSIFIED;
         classified_count_++;
     }
+    reasm_.erase(conn->tuple);  // classified -> the first flight is no longer needed
 }
 
 void ConnectionTracker::blockConnection(Connection* conn) {
@@ -108,6 +117,7 @@ size_t ConnectionTracker::cleanupStale(std::chrono::seconds timeout) {
             now - it->second.last_seen);
         
         if (age > timeout || it->second.state == ConnectionState::CLOSED) {
+            reasm_.erase(it->first);
             it = connections_.erase(it);
             removed++;
         } else {
@@ -144,6 +154,7 @@ ConnectionTracker::TrackerStats ConnectionTracker::getStats() const {
 
 void ConnectionTracker::clear() {
     connections_.clear();
+    reasm_.clear();
 }
 
 void ConnectionTracker::forEach(std::function<void(const Connection&)> callback) const {
@@ -163,6 +174,7 @@ void ConnectionTracker::evictOldest() {
         }
     }
     
+    reasm_.erase(oldest->first);
     connections_.erase(oldest);
 }
 

@@ -188,8 +188,11 @@ int main(int argc, char* argv[]) {
         flow.packets++;
         flow.bytes += raw.data.size();
         
-        // Try SNI extraction - even for flows already marked as generic HTTPS
-        if ((flow.app_type == AppType::UNKNOWN || flow.app_type == AppType::HTTPS) && 
+        // Try SNI extraction - even for flows already marked as generic HTTPS.
+        // NOTE: prism-lite is the single-packet reference engine -- it inspects
+        // each segment on its own. A ClientHello split across TCP segments is
+        // only classified by prism / prism-classic, which run TcpReassembler.
+        if ((flow.app_type == AppType::UNKNOWN || flow.app_type == AppType::HTTPS) &&
             flow.sni.empty() && parsed.has_tcp && parsed.dest_port == 443) {
             
             size_t payload_offset = 14;

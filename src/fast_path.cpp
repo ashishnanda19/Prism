@@ -103,7 +103,21 @@ PacketAction FastPathProcessor::processPacket(PacketJob& job) {
     if (conn->state == ConnectionState::BLOCKED) {
         return PacketAction::DROP;
     }
-    
+
+    // Feed the first-flight reassembler for TLS / HTTP flows. This must also see
+    // the SYN and any zero-payload segments, so it runs before the guard below.
+    if (conn->state != ConnectionState::CLASSIFIED && job.tuple.protocol == 6 &&
+        (job.tuple.dst_port == 443 || job.tuple.dst_port == 80)) {
+        TcpReassembler& r = conn_tracker_.firstFlight(job.tuple);
+        if (!r.full()) {
+            const bool syn = (job.tcp_flags & 0x02) && !(job.tcp_flags & 0x10);
+            const uint8_t* pl = (job.payload_length && job.payload_offset < job.data.size())
+                                    ? job.data.data() + job.payload_offset
+                                    : nullptr;
+            r.addSegment(job.tcp_seq, syn, pl, pl ? job.payload_length : 0);
+        }
+    }
+
     // If connection not yet classified, try to inspect payload
     if (conn->state != ConnectionState::CLASSIFIED && job.payload_length > 0) {
         inspectPayload(job, conn);
@@ -139,11 +153,14 @@ void FastPathProcessor::inspectPayload(PacketJob& job, Connection* conn) {
         }
     }
     
-    // Basic port-based classification as fallback
-    if (job.tuple.dst_port == 80) {
-        conn_tracker_.classifyConnection(conn, AppType::HTTP, "");
-    } else if (job.tuple.dst_port == 443) {
-        conn_tracker_.classifyConnection(conn, AppType::HTTPS, "");
+    // Port-based fallback. For TLS/HTTP, only give up once the first-flight
+    // reassembler has seen enough -- a multi-segment ClientHello may still be
+    // incomplete, so leave the flow unclassified and retry on the next segment.
+    if (job.tuple.dst_port == 80 || job.tuple.dst_port == 443) {
+        if (conn_tracker_.firstFlight(job.tuple).full()) {
+            conn_tracker_.classifyConnection(
+                conn, job.tuple.dst_port == 80 ? AppType::HTTP : AppType::HTTPS, "");
+        }
     }
 }
 
@@ -152,13 +169,23 @@ bool FastPathProcessor::tryExtractSNI(const PacketJob& job, Connection* conn) {
     if (job.tuple.dst_port != 443 && job.payload_length < 50) {
         return false;
     }
-    
+
     if (job.payload_offset >= job.data.size() || job.payload_length == 0) {
         return false;
     }
-    
-    const uint8_t* payload = job.data.data() + job.payload_offset;
-    auto sni = SNIExtractor::extract(payload, job.payload_length);
+
+    // Prefer the reassembled client first flight (handles a ClientHello split
+    // across TCP segments); fall back to this single packet's payload.
+    const uint8_t* data = job.data.data() + job.payload_offset;
+    size_t len = job.payload_length;
+    if (job.tuple.dst_port == 443) {
+        const auto& buf = conn_tracker_.firstFlight(job.tuple).data();
+        if (!buf.empty()) {
+            data = buf.data();
+            len = buf.size();
+        }
+    }
+    auto sni = SNIExtractor::extract(data, len);
     if (sni) {
         sni_extractions_++;
         
@@ -185,9 +212,17 @@ bool FastPathProcessor::tryExtractHTTPHost(const PacketJob& job, Connection* con
     if (job.payload_offset >= job.data.size() || job.payload_length == 0) {
         return false;
     }
-    
-    const uint8_t* payload = job.data.data() + job.payload_offset;
-    auto host = HTTPHostExtractor::extract(payload, job.payload_length);
+
+    const uint8_t* data = job.data.data() + job.payload_offset;
+    size_t len = job.payload_length;
+    {
+        const auto& buf = conn_tracker_.firstFlight(job.tuple).data();
+        if (!buf.empty()) {
+            data = buf.data();
+            len = buf.size();
+        }
+    }
+    auto host = HTTPHostExtractor::extract(data, len);
     if (host) {
         AppType app = sniToAppType(*host);
         conn_tracker_.classifyConnection(conn, app, *host);

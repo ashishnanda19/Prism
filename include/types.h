@@ -150,6 +150,7 @@ struct PacketJob {
     size_t payload_offset = 0;
     size_t payload_length = 0;
     uint8_t tcp_flags = 0;
+    uint32_t tcp_seq = 0;   // raw TCP sequence number of the first payload byte
     const uint8_t* payload_data = nullptr;
     
     // Timestamps

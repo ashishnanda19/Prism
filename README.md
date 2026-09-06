@@ -1036,7 +1036,7 @@ Prism is being taken from "portfolio project" to production-grade in tracked ste
 |---|------|--------|
 | 1 | Consolidated CMake build (`libprism_core` + `prism` / `prism-lite` / `prism-classic` / `prism-dump`), doctest unit suite, sanitizer options | ✅ done |
 | 2 | GitHub Actions CI — gcc/clang/macOS build matrix, ASan+UBSan / TSan runs, clang-tidy, libFuzzer harnesses for every parser | ✅ done |
-| 3 | TCP first-flight reassembly — classify TLS ClientHellos that span multiple segments | planned |
+| 3 | TCP first-flight reassembly — classify TLS ClientHellos that span multiple segments (`TcpReassembler`, wired into `prism` + `prism-classic`) | ✅ done |
 | 4 | Live capture — `AF_PACKET` (Linux) / `BPF` (macOS) source, optional inline mode | planned |
 | 5 | Signature DSL + JA3/JA4(+) TLS fingerprinting; real QUIC v1 Initial decode | planned |
 | 6 | Structured logging, Prometheus `/metrics` + Grafana dashboard, flow export (IPFIX / JSON) | planned |
