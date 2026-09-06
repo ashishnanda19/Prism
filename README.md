@@ -1001,6 +1001,34 @@ python3 generate_test_pcap.py
 # Creates test_dpi.pcap with sample traffic
 ```
 
+### Explain a flow
+
+`prism explain` replays a capture and prints exactly how a flow was handled —
+the reassembled first flight, the parsed ClientHello, JA3/JA4, which signature
+rule attributed it, the verdict, and a packet-by-packet timeline.
+
+```bash
+./build/bin/prism explain capture.pcap                       # every flow
+./build/bin/prism explain capture.pcap 10.0.0.5:51000-1.2.3.4:443
+./build/bin/prism explain capture.pcap :443 --block-app YouTube --json
+```
+
+```
+flow  192.168.1.100:58867  ->  142.250.185.110:443  (TCP)
+  first flight: 1 segment(s), 85 B contiguous
+  tls: TLS1.3  ciphers 2  extensions 2
+       sni  www.youtube.com
+       ja3  c1ef87234d1f4958b95c016a1a7100df
+       ja4  t13d020200_62ed6f6ca7ad_9b00d4eb1ff0
+  classification: YouTube
+        because:  SNI 'www.youtube.com' matched signature [contains youtube]
+  verdict: DROP  (app rule 'YouTube')
+```
+
+The classification decision lives in one place ([classify.h](include/classify.h))
+— host/SNI → JA3 → JA4 → port fallback, same order and rules as the engines —
+so an explanation matches what `prism` would actually do with the flow.
+
 ---
 
 ## 11. Understanding the Output
@@ -1084,7 +1112,7 @@ Prism is being taken from "portfolio project" to production-grade in tracked ste
 | 4 | Live capture — `PacketSource` abstraction; `AF_PACKET` (Linux) / `BPF` (macOS) live source with `--iface`, `--count`, `--promisc`, Ctrl-C stop | ✅ done |
 | 5 | Signature DSL (`--signatures`, hot-swappable rules) + JA3 / JA4 TLS fingerprinting | ✅ done (real QUIC v1 Initial decode still pending) |
 | 6 | Structured logging (`--log-json`), Prometheus `/metrics` endpoint, one-command Grafana stack in [deploy/](deploy/) | ✅ done (IPFIX flow export still pending) |
-| 7 | One flagship feature — JA4+ client DB, XDP/eBPF prefilter, HTTP/3 decode, or per-flow "explain the verdict" | planned |
+| 7 | Flagship: **`prism explain`** — replay a capture and dump the full decision trace for any flow (reassembly, SNI, JA3/JA4, which signature matched, verdict + why) | ✅ done |
 
 Smaller follow-ups already noted in code: replace the substring-based `sniToAppType`
 with the step-5 signature engine; give the connection table sharded locks + a timing

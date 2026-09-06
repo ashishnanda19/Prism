@@ -53,6 +53,14 @@ public:
     std::string matchJa3(const std::string& ja3_string, const std::string& ja3_hash) const;
     std::string matchJa4(const std::string& ja4) const;
 
+    // Same, but also hand back the rule that matched (nullptr on no match) so
+    // callers can explain *why* a flow was attributed.
+    const Rule* matchHostRule(const std::string& host) const;
+    const Rule* matchJa3Rule(const std::string& ja3_string, const std::string& ja3_hash) const;
+    const Rule* matchJa4Rule(const std::string& ja4) const;
+
+    static const char* kindName(Kind k);
+
 private:
     std::vector<Rule> rules_;
 };

@@ -100,42 +100,71 @@ bool SignatureSet::loadFile(const std::string& path, std::string& err) {
     return loadString(ss.str(), err, path.c_str());
 }
 
-std::string SignatureSet::matchHost(const std::string& host_in) const {
+const char* SignatureSet::kindName(Kind k) {
+    switch (k) {
+        case Kind::Suffix: return "suffix";
+        case Kind::Contains: return "contains";
+        case Kind::Exact: return "exact";
+        case Kind::Ja3: return "ja3";
+        case Kind::Ja3Hash: return "ja3hash";
+        case Kind::Ja4: return "ja4";
+        case Kind::Ja4Prefix: return "ja4prefix";
+    }
+    return "?";
+}
+
+const SignatureSet::Rule* SignatureSet::matchHostRule(const std::string& host_in) const {
     const std::string host = lower(host_in);
     for (const auto& r : rules_) {
         switch (r.kind) {
             case Kind::Suffix:
-                if (hostEndsWithLabel(host, r.pattern)) return r.app;
+                if (hostEndsWithLabel(host, r.pattern)) return &r;
                 break;
             case Kind::Contains:
-                if (host.find(r.pattern) != std::string::npos) return r.app;
+                if (host.find(r.pattern) != std::string::npos) return &r;
                 break;
             case Kind::Exact:
-                if (host == r.pattern) return r.app;
+                if (host == r.pattern) return &r;
                 break;
             default:
                 break;
         }
     }
-    return "";
+    return nullptr;
+}
+
+const SignatureSet::Rule* SignatureSet::matchJa3Rule(const std::string& ja3_string,
+                                                     const std::string& ja3_hash) const {
+    for (const auto& r : rules_) {
+        if (r.kind == Kind::Ja3 && r.pattern == ja3_string) return &r;
+        if (r.kind == Kind::Ja3Hash && r.pattern == ja3_hash) return &r;
+    }
+    return nullptr;
+}
+
+const SignatureSet::Rule* SignatureSet::matchJa4Rule(const std::string& ja4_in) const {
+    for (const auto& r : rules_) {
+        if (r.kind == Kind::Ja4 && r.pattern == ja4_in) return &r;
+        if (r.kind == Kind::Ja4Prefix && ja4_in.compare(0, r.pattern.size(), r.pattern) == 0)
+            return &r;
+    }
+    return nullptr;
+}
+
+std::string SignatureSet::matchHost(const std::string& host) const {
+    const Rule* r = matchHostRule(host);
+    return r ? r->app : "";
 }
 
 std::string SignatureSet::matchJa3(const std::string& ja3_string,
                                    const std::string& ja3_hash) const {
-    for (const auto& r : rules_) {
-        if (r.kind == Kind::Ja3 && r.pattern == ja3_string) return r.app;
-        if (r.kind == Kind::Ja3Hash && r.pattern == ja3_hash) return r.app;
-    }
-    return "";
+    const Rule* r = matchJa3Rule(ja3_string, ja3_hash);
+    return r ? r->app : "";
 }
 
 std::string SignatureSet::matchJa4(const std::string& ja4_in) const {
-    for (const auto& r : rules_) {
-        if (r.kind == Kind::Ja4 && r.pattern == ja4_in) return r.app;
-        if (r.kind == Kind::Ja4Prefix && ja4_in.compare(0, r.pattern.size(), r.pattern) == 0)
-            return r.app;
-    }
-    return "";
+    const Rule* r = matchJa4Rule(ja4_in);
+    return r ? r->app : "";
 }
 
 // ---------------------------------------------------------------------------

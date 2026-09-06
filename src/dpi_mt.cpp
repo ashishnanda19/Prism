@@ -25,11 +25,13 @@
 #include <csignal>
 
 #include "capture_cli.h"
+#include "flow_explainer.h"
 #include "http_server.h"
 #include "log.h"
 #include "metrics.h"
 #include "pcap_reader.h"
 #include "packet_parser.h"
+#include "rule_manager.h"
 #include "signature_set.h"
 #include "sni_extractor.h"
 #include "tcp_reassembler.h"
@@ -720,12 +722,96 @@ void printUsage(const char* prog) {
                  "  --block-domain <dom>  Block domain (substring match)\n"
                  "  --lbs <n>             Load balancer threads (default: 2)\n"
                  "  --fps <n>             FP threads per LB (default: 2)\n\n"
+              << "Subcommands:\n"
+                 "  explain <pcap> [flow] [--json] [--signatures f] [--block-*]\n"
+                 "      Trace how one flow was classified and why. `flow` is\n"
+                 "      ip:port-ip:port | ip:port | ip | :port (omit = all).\n\n"
               << "Examples:\n"
               << "  " << prog << " capture.pcap -o filtered.pcap --block-app YouTube\n"
-              << "  sudo " << prog << " --iface eth0 --block-domain tiktok\n";
+              << "  sudo " << prog << " --iface eth0 --block-domain tiktok\n"
+              << "  " << prog << " explain capture.pcap :443\n";
+}
+
+// ------------------------------------------------------------------ explain --
+static int runExplain(int argc, char* argv[]) {
+    std::string sigfile;
+    bool json = false;
+    RuleManager rules;
+    std::vector<std::string> pos;
+    std::string err;
+
+    for (int i = 2; i < argc; ++i) {
+        const std::string a = argv[i];
+        auto val = [&]() -> std::string {
+            return (i + 1 < argc) ? std::string(argv[++i]) : std::string();
+        };
+        if (a == "--json") json = true;
+        else if (a == "--signatures") sigfile = val();
+        else if (a == "--block-ip") rules.blockIP(val());
+        else if (a == "--block-domain") rules.blockDomain(val());
+        else if (a == "--block-port") rules.blockPort(static_cast<uint16_t>(std::stoi(val())));
+        else if (a == "--block-app") {
+            const std::string n = val();
+            AppType t = labelToAppType(n);
+            if (t == AppType::UNKNOWN) { std::cerr << "prism explain: unknown app '" << n << "'\n"; return 2; }
+            rules.blockApp(t);
+        } else if (a == "-h" || a == "--help") {
+            std::cout << "usage: prism explain <pcap> [flow] [--json] [--signatures f]"
+                         " [--block-ip|--block-app|--block-domain|--block-port <v>]\n";
+            return 0;
+        } else if (!a.empty() && a[0] == '-') {
+            std::cerr << "prism explain: unknown option '" << a << "'\n";
+            return 2;
+        } else {
+            pos.push_back(a);
+        }
+    }
+    if (pos.empty()) {
+        std::cerr << "prism explain: need a <pcap> path\n";
+        return 1;
+    }
+    if (!sigfile.empty() && !loadSignatureFile(sigfile, err)) {
+        std::cerr << "prism explain: " << err << "\n";
+        return 1;
+    }
+
+    FlowFilter filter = FlowFilter::parse(pos.size() > 1 ? pos[1] : std::string(), err);
+    if (!err.empty()) {
+        std::cerr << "prism explain: " << err << "\n";
+        return 2;
+    }
+
+    PcapReader reader;
+    if (!reader.open(pos[0])) {
+        std::cerr << "prism explain: cannot open " << pos[0] << "\n";
+        return 1;
+    }
+
+    FlowExplainer ex(activeSignatures(), &rules);
+    ex.setFilter(filter);
+    auto traces = ex.run(reader);
+
+    if (traces.empty()) {
+        std::cout << "no flows matched"
+                  << (pos.size() > 1 ? " '" + pos[1] + "'" : "") << "\n";
+        return 0;
+    }
+    if (json) {
+        std::cout << "[";
+        for (size_t i = 0; i < traces.size(); ++i) {
+            if (i) std::cout << ",";
+            std::cout << traces[i].toJson();
+        }
+        std::cout << "]\n";
+    } else {
+        for (const auto& t : traces) std::cout << "\n" << t.toText();
+    }
+    return 0;
 }
 
 int main(int argc, char* argv[]) {
+    if (argc >= 2 && std::string(argv[1]) == "explain") return runExplain(argc, argv);
+
     RunOptions opt;
     std::string err;
     if (!parseRunOptions(argc, argv, opt, err)) {

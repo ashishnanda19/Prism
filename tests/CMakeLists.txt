@@ -26,6 +26,8 @@ add_executable(prism_tests
     test_signature_set.cpp
     test_tls_fingerprint.cpp
     test_observability.cpp
+    test_classify.cpp
+    test_flow_explainer.cpp
 )
 target_link_libraries(prism_tests PRIVATE prism_core doctest prism_sanitize)
 target_compile_definitions(prism_tests PRIVATE

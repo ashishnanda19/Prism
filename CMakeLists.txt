@@ -82,6 +82,8 @@ add_library(prism_core STATIC
     src/packet_source.cpp
     src/live_source.cpp
     src/capture_cli.cpp
+    src/classify.cpp
+    src/flow_explainer.cpp
     src/hashes.cpp
     src/http_server.cpp
     src/log.cpp
@@ -91,8 +93,7 @@ add_library(prism_core STATIC
     src/tcp_reassembler.cpp
     src/tls_fingerprint.cpp
     src/types.cpp
-    # Flow + policy units (currently used by the "classic" engine; kept in the
-    # core library so the test suite and future engines can link them).
+    # Flow + policy units (also used by the "classic" engine).
     src/connection_tracker.cpp
     src/rule_manager.cpp
 )
